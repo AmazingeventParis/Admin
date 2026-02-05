@@ -10,8 +10,6 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-      groups:
-        - app_store_credentials
     scripts:
       - name: Set up code signing settings on Xcode project
         script: |
@@ -27,12 +25,6 @@ workflows:
           flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
-    publishing:
-      app_store_connect:
-        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
-        key_id: KZBZXWQ5YW
-        issuer_id: 349bb629-7f29-45ed-a8c8-01e1b58b4e27
-        submit_to_testflight: true
 
   android-release:
     name: Android Release
