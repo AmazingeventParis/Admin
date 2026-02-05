@@ -78,7 +78,11 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     // Lancer la musique d'intro via le service global
-    audioService.playIntroMusic();
+    try {
+      audioService.playIntroMusic();
+    } catch (e) {
+      print('Erreur audio: $e');
+    }
   }
 
   @override

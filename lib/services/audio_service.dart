@@ -38,18 +38,22 @@ class AudioService {
 
   /// Jouer la musique d'intro (pour toutes les pages sauf le jeu)
   Future<void> playIntroMusic() async {
-    await init();
+    try {
+      await init();
 
-    // Si la musique de jeu joue, l'arrêter
-    if (_isGamePlaying) {
-      await _gamePlayer.stop();
-      _isGamePlaying = false;
-    }
+      // Si la musique de jeu joue, l'arrêter
+      if (_isGamePlaying) {
+        await _gamePlayer.stop();
+        _isGamePlaying = false;
+      }
 
-    // Si l'intro ne joue pas déjà, la démarrer
-    if (!_isIntroPlaying) {
-      await _introPlayer.play(AssetSource('sounds/intro.mp3'));
-      _isIntroPlaying = true;
+      // Si l'intro ne joue pas déjà, la démarrer
+      if (!_isIntroPlaying) {
+        await _introPlayer.play(AssetSource('sounds/intro.mp3'));
+        _isIntroPlaying = true;
+      }
+    } catch (e) {
+      print('Erreur playIntroMusic: $e');
     }
   }
 

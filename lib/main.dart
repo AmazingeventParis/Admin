@@ -29,7 +29,11 @@ void main() async {
   );
 
   // Initialiser Supabase
-  await SupabaseService.initialize();
+  try {
+    await SupabaseService.initialize();
+  } catch (e) {
+    print('Erreur Supabase init: $e');
+  }
 
   runApp(const BlockPuzzleApp());
 }
