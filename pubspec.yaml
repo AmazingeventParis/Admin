@@ -13,7 +13,6 @@ dependencies:
   audioplayers: ^5.2.1
   supabase_flutter: ^2.3.0
   google_sign_in: ^6.1.6
-  device_preview: ^1.2.0
 
 dev_dependencies:
   flutter_test:
