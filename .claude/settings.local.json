@@ -35,7 +35,10 @@
       "Bash(git config:*)",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git rm:*)",
+      "Bash(py --version)",
+      "Bash(convert:*)"
     ]
   }
 }
