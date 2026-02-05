@@ -7,7 +7,7 @@ import 'services/supabase_service.dart';
 
 // Mettre à true pour activer Device Preview (mode test)
 // Mettre à false pour la version production (APK final)
-const bool kEnableDevicePreview = true;
+const bool kEnableDevicePreview = false;
 
 // ============================================
 // APPAREILS PERSONNALISÉS - TOP VENTES MONDE
