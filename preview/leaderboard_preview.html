@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview Leaderboard - Déplace les éléments</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            font-family: Arial, sans-serif;
+            background: #333;
+            padding: 20px;
+        }
+
+        .phone-frame {
+            width: 324px;
+            height: 720px;
+            position: relative;
+            overflow: hidden;
+            border: 3px solid #333;
+            border-radius: 20px;
+            background-color: #000;
+            /* Ratio 1080x2400 (9:20) scaled down */
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+        }
+
+        .draggable {
+            position: absolute;
+            cursor: move;
+            z-index: 10;
+        }
+
+        .draggable:hover {
+            outline: 3px solid #00ff00;
+        }
+
+        .draggable.selected {
+            outline: 3px solid #ff0000;
+        }
+
+        .title-img {
+            width: 95%;
+            left: 8px;
+            top: 60px;
+        }
+
+        .score-board {
+            width: 102%;
+            left: -3px;
+            top: 115px;
+        }
+
+        .podium-photo {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #FF9EC4, #E85A8F);
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* Positions initiales ajustées pour les cercles du podium */
+        .photo-1 { top: 175px; left: 146px; }
+        .photo-2 { top: 175px; left: 58px; }
+        .photo-3 { top: 175px; left: 234px; }
+
+        .back-button {
+            top: 35px;
+            left: 15px;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #FF9EC4, #E85A8F);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+        }
+
+        .reset-btn {
+            background: #666;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+            font-size: 13px;
+        }
+
+        .reset-btn:hover {
+            background: #444;
+        }
+
+        /* Panel de contrôle */
+        .controls {
+            padding: 20px;
+            background: #f0f0f0;
+            width: 380px;
+            height: 720px;
+            overflow-y: auto;
+            margin-left: 20px;
+            border-radius: 10px;
+        }
+
+        .controls h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .controls h3 {
+            margin: 20px 0 10px;
+            color: #666;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+        }
+
+        .position-info {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        .position-info .label {
+            font-weight: bold;
+            color: #E85A8F;
+        }
+
+        .copy-btn {
+            background: #E85A8F;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .copy-btn:hover {
+            background: #c94a7a;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .size-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+            background: white;
+            padding: 6px 10px;
+            border-radius: 8px;
+        }
+
+        .size-control label {
+            width: 65px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .size-control input[type="range"] {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .size-control span {
+            width: 45px;
+            text-align: right;
+            font-family: monospace;
+            font-size: 11px;
+            color: #E85A8F;
+        }
+
+        .helper-circles {
+            position: absolute;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .helper-circle {
+            position: absolute;
+            border: 2px dashed rgba(0, 255, 0, 0.5);
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-frame" id="phoneFrame">
+        <!-- Fond -->
+        <img src="../assets/ui/Fondleader.png" class="background" alt="Background">
+
+        <!-- Bouton retour -->
+        <div class="draggable back-button" id="backBtn" data-name="Bouton Retour">
+            ←
+        </div>
+
+        <!-- Titre -->
+        <img src="../assets/ui/texteleaderboard.png" class="draggable title-img" id="titleImg" data-name="Titre">
+
+        <!-- Tableau des scores -->
+        <img src="../assets/ui/Fondscrore.png" class="draggable score-board" id="scoreBoard" data-name="Tableau Scores">
+
+        <!-- Photos podium -->
+        <div class="draggable podium-photo photo-1" id="photo1" data-name="Photo 1ère place">1</div>
+        <div class="draggable podium-photo photo-2" id="photo2" data-name="Photo 2ème place">2</div>
+        <div class="draggable podium-photo photo-3" id="photo3" data-name="Photo 3ème place">3</div>
+    </div>
+
+    <div class="controls">
+        <h2>Preview Leaderboard</h2>
+
+        <div class="instructions">
+            <strong>Instructions:</strong><br>
+            1. Clique sur un élément pour le sélectionner<br>
+            2. <strong>Flèches clavier</strong> = déplacer de 1px<br>
+            3. <strong>Shift + Flèches</strong> = déplacer de 5px<br>
+            4. Clique "Copier" quand c'est bon
+        </div>
+
+        <h3>Positions actuelles</h3>
+        <div id="positionsDisplay"></div>
+
+        <h3>Tailles</h3>
+
+        <div class="size-control">
+            <label>Titre:</label>
+            <input type="range" id="sizeTitle" min="50" max="120" value="95" oninput="updateImgSize('titleImg', this.value)">
+            <span id="sizeTitleVal">95%</span>
+        </div>
+
+        <div class="size-control">
+            <label>Tableau:</label>
+            <input type="range" id="sizeBoard" min="80" max="120" value="102" oninput="updateImgSize('scoreBoard', this.value)">
+            <span id="sizeBoardVal">102%</span>
+        </div>
+
+        <div class="size-control">
+            <label>Photo 1:</label>
+            <input type="range" id="size1" min="20" max="80" value="32" oninput="updatePhotoSize('photo1', this.value, 'size1Val')">
+            <span id="size1Val">32px</span>
+        </div>
+
+        <div class="size-control">
+            <label>Photo 2:</label>
+            <input type="range" id="size2" min="20" max="80" value="32" oninput="updatePhotoSize('photo2', this.value, 'size2Val')">
+            <span id="size2Val">32px</span>
+        </div>
+
+        <div class="size-control">
+            <label>Photo 3:</label>
+            <input type="range" id="size3" min="20" max="80" value="32" oninput="updatePhotoSize('photo3', this.value, 'size3Val')">
+            <span id="size3Val">32px</span>
+        </div>
+
+        <button class="copy-btn" onclick="copyPositions()">
+            Copier toutes les positions
+        </button>
+
+        <button class="reset-btn" onclick="resetAll()">
+            Réinitialiser
+        </button>
+
+        <div id="copyMessage" style="color: green; margin-top: 10px; display: none; text-align: center;">
+            Positions copiées !
+        </div>
+    </div>
+
+    <script>
+        const phoneFrame = document.getElementById('phoneFrame');
+        const frameWidth = 324;
+        const frameHeight = 720;
+
+        let draggables = document.querySelectorAll('.draggable');
+        let currentDraggable = null;
+        let offsetX, offsetY;
+
+        // Initialiser le drag & drop
+        draggables.forEach(el => {
+            el.addEventListener('mousedown', startDrag);
+        });
+
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', stopDrag);
+
+        // Contrôle au clavier (flèches)
+        document.addEventListener('keydown', function(e) {
+            if (!selectedElement) return;
+
+            const step = e.shiftKey ? 5 : 1; // Shift = 5px, sinon 1px
+            let left = parseInt(selectedElement.style.left) || selectedElement.offsetLeft;
+            let top = parseInt(selectedElement.style.top) || selectedElement.offsetTop;
+
+            switch(e.key) {
+                case 'ArrowUp':
+                    top -= step;
+                    e.preventDefault();
+                    break;
+                case 'ArrowDown':
+                    top += step;
+                    e.preventDefault();
+                    break;
+                case 'ArrowLeft':
+                    left -= step;
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    left += step;
+                    e.preventDefault();
+                    break;
+            }
+
+            selectedElement.style.left = left + 'px';
+            selectedElement.style.top = top + 'px';
+            updatePositionsDisplay();
+        });
+
+        let selectedElement = null;
+
+        function startDrag(e) {
+            currentDraggable = e.target.closest('.draggable');
+            if (!currentDraggable) return;
+
+            const rect = currentDraggable.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+
+            draggables.forEach(el => el.classList.remove('selected'));
+            currentDraggable.classList.add('selected');
+            selectedElement = currentDraggable;
+        }
+
+        function drag(e) {
+            if (!currentDraggable) return;
+
+            const frameRect = phoneFrame.getBoundingClientRect();
+            let x = e.clientX - frameRect.left - offsetX;
+            let y = e.clientY - frameRect.top - offsetY;
+
+            currentDraggable.style.left = x + 'px';
+            currentDraggable.style.top = y + 'px';
+
+            updatePositionsDisplay();
+        }
+
+        function stopDrag() {
+            currentDraggable = null;
+        }
+
+        function updatePositionsDisplay() {
+            const display = document.getElementById('positionsDisplay');
+            let html = '';
+
+            draggables.forEach(el => {
+                const name = el.dataset.name;
+                const left = parseInt(el.style.left) || el.offsetLeft;
+                const top = parseInt(el.style.top) || el.offsetTop;
+
+                const leftPercent = ((left / frameWidth) * 100).toFixed(1);
+                const topPercent = ((top / frameHeight) * 100).toFixed(1);
+
+                html += `
+                    <div class="position-info">
+                        <span class="label">${name}:</span><br>
+                        left: ${leftPercent}%, top: ${topPercent}%
+                    </div>
+                `;
+            });
+
+            display.innerHTML = html;
+        }
+
+        function updatePhotoSize(photoId, size, labelId) {
+            const photo = document.getElementById(photoId);
+            photo.style.width = size + 'px';
+            photo.style.height = size + 'px';
+            photo.style.fontSize = (size * 0.45) + 'px';
+            document.getElementById(labelId).textContent = size + 'px';
+            updatePositionsDisplay();
+        }
+
+        function updateImgSize(imgId, percent) {
+            const img = document.getElementById(imgId);
+            img.style.width = percent + '%';
+            if (imgId === 'titleImg') {
+                document.getElementById('sizeTitleVal').textContent = percent + '%';
+            } else {
+                document.getElementById('sizeBoardVal').textContent = percent + '%';
+            }
+            updatePositionsDisplay();
+        }
+
+        function copyPositions() {
+            let text = "POSITIONS POUR CLAUDE:\n\n";
+
+            draggables.forEach(el => {
+                const name = el.dataset.name;
+                const left = parseInt(el.style.left) || el.offsetLeft;
+                const top = parseInt(el.style.top) || el.offsetTop;
+                const leftPercent = ((left / frameWidth) * 100).toFixed(1);
+                const topPercent = ((top / frameHeight) * 100).toFixed(1);
+
+                text += `${name}: left=${leftPercent}%, top=${topPercent}%\n`;
+            });
+
+            text += `\nTAILLES:\n`;
+            text += `Titre: ${document.getElementById('sizeTitle').value}%\n`;
+            text += `Tableau: ${document.getElementById('sizeBoard').value}%\n`;
+            text += `Photo 1: ${document.getElementById('size1').value}px\n`;
+            text += `Photo 2: ${document.getElementById('size2').value}px\n`;
+            text += `Photo 3: ${document.getElementById('size3').value}px\n`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                document.getElementById('copyMessage').style.display = 'block';
+                setTimeout(() => {
+                    document.getElementById('copyMessage').style.display = 'none';
+                }, 2000);
+            });
+        }
+
+        function resetAll() {
+            document.getElementById('backBtn').style.left = '15px';
+            document.getElementById('backBtn').style.top = '35px';
+
+            document.getElementById('titleImg').style.left = '8px';
+            document.getElementById('titleImg').style.top = '60px';
+            document.getElementById('titleImg').style.width = '95%';
+
+            document.getElementById('scoreBoard').style.left = '-3px';
+            document.getElementById('scoreBoard').style.top = '115px';
+            document.getElementById('scoreBoard').style.width = '102%';
+
+            document.getElementById('photo1').style.left = '146px';
+            document.getElementById('photo1').style.top = '175px';
+            document.getElementById('photo1').style.width = '32px';
+            document.getElementById('photo1').style.height = '32px';
+
+            document.getElementById('photo2').style.left = '58px';
+            document.getElementById('photo2').style.top = '175px';
+            document.getElementById('photo2').style.width = '32px';
+            document.getElementById('photo2').style.height = '32px';
+
+            document.getElementById('photo3').style.left = '234px';
+            document.getElementById('photo3').style.top = '175px';
+            document.getElementById('photo3').style.width = '32px';
+            document.getElementById('photo3').style.height = '32px';
+
+            document.getElementById('sizeTitle').value = 95;
+            document.getElementById('sizeTitleVal').textContent = '95%';
+            document.getElementById('sizeBoard').value = 102;
+            document.getElementById('sizeBoardVal').textContent = '102%';
+            document.getElementById('size1').value = 32;
+            document.getElementById('size1Val').textContent = '32px';
+            document.getElementById('size2').value = 32;
+            document.getElementById('size2Val').textContent = '32px';
+            document.getElementById('size3').value = 32;
+            document.getElementById('size3Val').textContent = '32px';
+
+            updatePositionsDisplay();
+        }
+
+        updatePositionsDisplay();
+    </script>
+</body>
+</html>

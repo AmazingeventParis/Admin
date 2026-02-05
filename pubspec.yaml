@@ -1,0 +1,70 @@
+name: block_puzzle
+description: A classic block puzzle game built with Flutter.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.2.2
+  audioplayers: ^5.2.1
+  supabase_flutter: ^2.3.0
+  google_sign_in: ^6.1.6
+  device_preview: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/ui/Icone.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#87CEEB"
+  adaptive_icon_foreground: "assets/ui/Icone.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/blocks/block_base2.png
+    - assets/bg/bg.png
+    - assets/ui/board_frame.png
+    - assets/ui/Fond.png
+    - assets/ui/Logo titre.png
+    - assets/ui/play logo.png
+    - assets/ui/play.png
+    - assets/ui/cercle.png
+    - assets/ui/ourse.png
+    - assets/ui/ComboX1.png
+    - assets/ui/ComboX2.png
+    - assets/ui/ComboX3.png
+    - assets/ui/cerclejoueur.png
+    - assets/ui/cerclevidephoto.png
+    - assets/ui/fondpageaccueil.png
+    - assets/ui/Menu.png
+    - assets/ui/Boutonaccueil.png
+    - assets/ui/boutonleader.png
+    - assets/ui/boutonmessages.png
+    - assets/ui/PageLeader.png
+    - assets/ui/Fondleader.png
+    - assets/ui/texteleaderboard.png
+    - assets/ui/Fondscrore.png
+    - assets/ui/cerclesscore.png
+    - assets/ui/cerclemeilleurscrore.png
+    - assets/ui/cercleparametres.png
+    - assets/ui/Cerclevidepourphoto.png
+    - assets/ui/jelly_bomb_idle.png
+    - assets/ui/jelly_bomb_glow.png
+    - assets/ui/jelly_bomb_burst.png
+    - assets/ui/sugar_gauge_frame.png
+    - assets/ui/sugar_gauge.png
+    - assets/ui/sugar_gauge_icon.png
+    - assets/ui/cadrebloqueenbas.png
+    - assets/sounds/

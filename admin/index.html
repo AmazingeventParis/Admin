@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candy Puzzle - Administration</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Candy Puzzle - Admin</h1>
+            <p class="subtitle">Panneau d'administration</p>
+        </header>
+
+        <!-- Stats Dashboard -->
+        <section class="dashboard">
+            <h2>Statistiques</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-value" id="totalUsers">-</div>
+                    <div class="stat-label">Total Utilisateurs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-value" id="realUsers">-</div>
+                    <div class="stat-label">Vrais joueurs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🤖</div>
+                    <div class="stat-value" id="fakeUsers">-</div>
+                    <div class="stat-label">Faux profils</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎮</div>
+                    <div class="stat-value" id="totalGames">-</div>
+                    <div class="stat-label">Parties jouées</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🏆</div>
+                    <div class="stat-value" id="bestScore">-</div>
+                    <div class="stat-label">Meilleur score</div>
+                </div>
+            </div>
+            <button class="btn btn-refresh" onclick="loadStats()">🔄 Actualiser</button>
+        </section>
+
+        <!-- Fake Profile Generator -->
+        <section class="generator">
+            <h2>Générateur de Faux Profils</h2>
+            <p class="description">Génère des profils fictifs avec photos et noms réalistes via randomuser.me</p>
+
+            <div class="generator-controls">
+                <div class="control-group">
+                    <label for="profileCount">Nombre de profils :</label>
+                    <input type="number" id="profileCount" value="5" min="1" max="50">
+                </div>
+                <div class="control-group">
+                    <label for="nationality">Nationalité :</label>
+                    <select id="nationality">
+                        <option value="">Aléatoire</option>
+                        <option value="fr" selected>France</option>
+                        <option value="us">États-Unis</option>
+                        <option value="gb">Royaume-Uni</option>
+                        <option value="de">Allemagne</option>
+                        <option value="es">Espagne</option>
+                        <option value="it">Italie</option>
+                        <option value="br">Brésil</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="gender">Genre :</label>
+                    <select id="gender">
+                        <option value="">Aléatoire</option>
+                        <option value="male">Homme</option>
+                        <option value="female">Femme</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="minScore">Score minimum :</label>
+                    <input type="number" id="minScore" value="1000" min="0" max="999999">
+                </div>
+                <div class="control-group">
+                    <label for="maxScore">Score maximum :</label>
+                    <input type="number" id="maxScore" value="15000" min="0" max="999999">
+                </div>
+                <button class="btn btn-generate" onclick="generateProfiles()">✨ Générer les profils</button>
+            </div>
+
+            <!-- Preview -->
+            <div class="preview-section" id="previewSection" style="display: none;">
+                <h3>Aperçu des profils générés</h3>
+                <div class="profiles-grid" id="profilesPreview"></div>
+                <div class="preview-actions">
+                    <button class="btn btn-cancel" onclick="cancelProfiles()">❌ Annuler</button>
+                    <button class="btn btn-confirm" onclick="confirmProfiles()">✅ Ajouter à la base</button>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Génération en cours...</p>
+            </div>
+        </section>
+
+        <!-- Users List -->
+        <section class="users-list">
+            <h2>Liste des Utilisateurs</h2>
+            <div class="filter-controls">
+                <div class="control-group">
+                    <label for="userFilter">Filtrer par :</label>
+                    <select id="userFilter" onchange="loadUsers()">
+                        <option value="all">Tous</option>
+                        <option value="real">Vrais joueurs</option>
+                        <option value="fake">Faux profils (Bots)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>Photo</th>
+                            <th>Nom</th>
+                            <th>Type</th>
+                            <th>Parties</th>
+                            <th>Meilleur Score</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <!-- Users will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Toast Notifications -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

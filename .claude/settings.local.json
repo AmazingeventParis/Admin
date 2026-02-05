@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter run:*)",
+      "Bash(timeout:*)",
+      "Bash(ren:*)",
+      "Bash(flutter create:*)",
+      "Bash(flutter build:*)",
+      "Bash(python -m http.server:*)",
+      "Bash(dir \"C:\\\\Users\\\\asche\\\\Downloads\\\\claude\\\\Jeu puzzle\\\\assets\" /s /b)",
+      "Bash(flutter attach:*)",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__take_snapshot",
+      "Bash(dir \"C:\\\\Users\\\\asche\\\\Downloads\\\\claude\\\\Jeu puzzle\\\\assets\\\\sounds\")",
+      "Bash(move:*)",
+      "Bash(keytool -list:*)",
+      "Bash(findstr:*)",
+      "Bash(flutter clean:*)",
+      "Bash(copy:*)",
+      "Bash(dir \"C:\\\\Users\\\\asche\\\\Downloads\\\\claude\\\\Jeu puzzle\\\\assets\\\\ui\\\\sugar*\")",
+      "Bash(del \"C:\\\\Users\\\\asche\\\\Downloads\\\\claude\\\\Jeu puzzle\\\\lib\\\\ui\\\\screens\\\\layout_editor_screen.dart\")",
+      "Bash(powershell -Command:*)",
+      "Bash(magick:*)",
+      "Bash(where:*)",
+      "Bash(python:*)",
+      "Bash(dart run:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(dir:*)"
+    ]
+  }
+}

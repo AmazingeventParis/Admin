@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Éditeur de Layout - Candy Puzzle</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Zone de canvas */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #16213e;
+            padding: 20px;
+        }
+
+        .phone-frame {
+            width: 380px;
+            height: 680px;
+            background: url('assets/bg/bg.png') center/cover;
+            position: relative;
+            border: 3px solid #4a4a6a;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        /* Éléments draggables */
+        .ui-element {
+            position: absolute;
+            cursor: move;
+            border: 2px solid rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            user-select: none;
+            transition: border-color 0.2s;
+        }
+
+        .ui-element:hover {
+            border-color: rgba(255,255,255,0.6);
+        }
+
+        .ui-element.selected {
+            border-color: #00ffff;
+            box-shadow: 0 0 10px rgba(0,255,255,0.5);
+        }
+
+        .ui-element img {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            pointer-events: none;
+        }
+
+        .ui-element .label {
+            position: absolute;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            white-space: nowrap;
+        }
+
+        /* Poignée de redimensionnement */
+        .resize-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #00ffff;
+            right: -6px;
+            bottom: -6px;
+            cursor: se-resize;
+            border-radius: 2px;
+            display: none;
+        }
+
+        .ui-element.selected .resize-handle {
+            display: block;
+        }
+
+        /* Panel de propriétés */
+        .properties-panel {
+            width: 320px;
+            background: #0f0f23;
+            padding: 20px;
+            overflow-y: auto;
+            border-left: 1px solid #333;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .element-list {
+            margin-bottom: 20px;
+        }
+
+        .element-item {
+            padding: 12px;
+            background: #1a1a2e;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .element-item:hover {
+            background: #252545;
+        }
+
+        .element-item.selected {
+            border-color: #00ffff;
+            background: rgba(0,255,255,0.1);
+        }
+
+        .element-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .element-info {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .property-group {
+            margin-bottom: 20px;
+        }
+
+        .property-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .property-label {
+            width: 70px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .property-input {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            background: #1a1a2e;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .property-input button {
+            width: 30px;
+            height: 30px;
+            background: #333;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .property-input button:hover {
+            background: #444;
+        }
+
+        .property-input input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: white;
+            text-align: center;
+            font-size: 14px;
+            padding: 5px;
+        }
+
+        .property-input input:focus {
+            outline: none;
+        }
+
+        .export-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+
+        .export-btn:hover {
+            transform: scale(1.02);
+        }
+
+        .divider {
+            height: 1px;
+            background: #333;
+            margin: 20px 0;
+        }
+
+        /* Modal export */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        .modal-text {
+            background: #0f0f23;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .modal-btn.copy {
+            background: #00ffff;
+            color: #000;
+        }
+
+        .modal-btn.close {
+            background: #333;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="canvas-area">
+            <div class="phone-frame" id="phoneFrame">
+                <!-- Les éléments seront ajoutés par JavaScript -->
+            </div>
+        </div>
+
+        <div class="properties-panel">
+            <div class="panel-title">Contrôles</div>
+            <div class="help-text">Clic : Sélectionner un élément</div>
+            <div class="help-text">Glisser : Déplacer l'élément</div>
+            <div class="help-text">Coin cyan : Redimensionner</div>
+            <div class="help-text">Flèches : Déplacer de 1px</div>
+            <div class="help-text">Shift + Flèches : Déplacer de 10px</div>
+
+            <div class="divider"></div>
+
+            <div class="panel-title">Éléments</div>
+            <div class="element-list" id="elementList"></div>
+
+            <div class="divider"></div>
+
+            <div class="panel-title">Propriétés</div>
+            <div class="property-group" id="propertyGroup">
+                <p style="color: #666; font-size: 12px;">Sélectionnez un élément</p>
+            </div>
+
+            <button class="export-btn" onclick="exportMeasurements()">
+                Exporter les mesures
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <div class="modal-title">Mesures exportées</div>
+            <div class="modal-text" id="modalText"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn copy" onclick="copyToClipboard()">Copier</button>
+                <button class="modal-btn close" onclick="closeModal()">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration des éléments UI
+        const elements = {
+            scoreLeft: {
+                name: 'Score Gauche',
+                x: 12, y: 8,
+                width: 150, height: 60,
+                color: 'rgba(59, 130, 246, 0.4)',
+                image: 'assets/ui/cerclesscore.png'
+            },
+            scoreRight: {
+                name: 'Score Droit (Best)',
+                x: 218, y: 8,
+                width: 150, height: 60,
+                color: 'rgba(245, 158, 11, 0.4)',
+                image: 'assets/ui/cerclemeilleurscrore.png'
+            },
+            sugarGauge: {
+                name: 'Jauge Sugar Rush',
+                x: 89, y: 93,
+                width: 195, height: 45,
+                color: 'rgba(236, 72, 153, 0.4)',
+                image: 'assets/ui/sugar_gauge_frame.png'
+            },
+            gameBoard: {
+                name: 'Plateau de Jeu',
+                x: 15, y: 130,
+                width: 350, height: 350,
+                color: 'rgba(34, 197, 94, 0.3)',
+                image: 'assets/ui/board_frame.png'
+            },
+            piecesFrame: {
+                name: 'Cadre Pièces',
+                x: 9, y: 486,
+                width: 357, height: 171,
+                color: 'rgba(168, 85, 247, 0.4)',
+                image: 'assets/ui/cadrebloqueenbas.png'
+            },
+            piece1: {
+                name: 'Zone Pièce 1',
+                x: 37, y: 519,
+                width: 99, height: 106,
+                color: 'rgba(239, 68, 68, 0.3)'
+            },
+            piece2: {
+                name: 'Zone Pièce 2',
+                x: 137, y: 519,
+                width: 101, height: 105,
+                color: 'rgba(249, 115, 22, 0.3)'
+            },
+            piece3: {
+                name: 'Zone Pièce 3',
+                x: 241, y: 517,
+                width: 96, height: 109,
+                color: 'rgba(234, 179, 8, 0.3)'
+            }
+        };
+
+        let selectedElement = null;
+        let isDragging = false;
+        let isResizing = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        // Initialisation
+        function init() {
+            const phoneFrame = document.getElementById('phoneFrame');
+            const elementList = document.getElementById('elementList');
+
+            // Créer les éléments UI
+            Object.entries(elements).forEach(([key, data]) => {
+                // Élément dans le canvas
+                const el = document.createElement('div');
+                el.className = 'ui-element';
+                el.id = key;
+                el.style.left = data.x + 'px';
+                el.style.top = data.y + 'px';
+                el.style.width = data.width + 'px';
+                el.style.height = data.height + 'px';
+                el.style.backgroundColor = data.color;
+
+                if (data.image) {
+                    const img = document.createElement('img');
+                    img.src = data.image;
+                    img.onerror = () => img.style.display = 'none';
+                    el.appendChild(img);
+                }
+
+                const label = document.createElement('div');
+                label.className = 'label';
+                label.textContent = data.name;
+                el.appendChild(label);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                el.appendChild(resizeHandle);
+
+                el.addEventListener('mousedown', (e) => startDrag(e, key));
+                resizeHandle.addEventListener('mousedown', (e) => startResize(e, key));
+
+                phoneFrame.appendChild(el);
+
+                // Élément dans la liste
+                const listItem = document.createElement('div');
+                listItem.className = 'element-item';
+                listItem.id = 'list-' + key;
+                listItem.innerHTML = `
+                    <div class="element-name">${data.name}</div>
+                    <div class="element-info">X: ${data.x} Y: ${data.y} | W: ${data.width} H: ${data.height}</div>
+                `;
+                listItem.addEventListener('click', () => selectElement(key));
+                elementList.appendChild(listItem);
+            });
+
+            // Events globaux
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.addEventListener('keydown', handleKeyDown);
+        }
+
+        function selectElement(key) {
+            // Désélectionner l'ancien
+            if (selectedElement) {
+                document.getElementById(selectedElement).classList.remove('selected');
+                document.getElementById('list-' + selectedElement).classList.remove('selected');
+            }
+
+            selectedElement = key;
+
+            // Sélectionner le nouveau
+            document.getElementById(key).classList.add('selected');
+            document.getElementById('list-' + key).classList.add('selected');
+
+            updatePropertyPanel();
+        }
+
+        function startDrag(e, key) {
+            if (e.target.classList.contains('resize-handle')) return;
+
+            e.preventDefault();
+            selectElement(key);
+            isDragging = true;
+
+            const el = document.getElementById(key);
+            const rect = el.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+        }
+
+        function startResize(e, key) {
+            e.preventDefault();
+            e.stopPropagation();
+            selectElement(key);
+            isResizing = true;
+        }
+
+        function handleMouseMove(e) {
+            if (!selectedElement) return;
+
+            const phoneFrame = document.getElementById('phoneFrame');
+            const frameRect = phoneFrame.getBoundingClientRect();
+            const el = document.getElementById(selectedElement);
+            const data = elements[selectedElement];
+
+            if (isDragging) {
+                data.x = Math.round(e.clientX - frameRect.left - dragOffset.x);
+                data.y = Math.round(e.clientY - frameRect.top - dragOffset.y);
+
+                // Limites
+                data.x = Math.max(0, Math.min(data.x, 380 - data.width));
+                data.y = Math.max(0, Math.min(data.y, 680 - data.height));
+
+                el.style.left = data.x + 'px';
+                el.style.top = data.y + 'px';
+
+                updateListItem(selectedElement);
+                updatePropertyPanel();
+            }
+
+            if (isResizing) {
+                const newWidth = Math.round(e.clientX - frameRect.left - data.x);
+                const newHeight = Math.round(e.clientY - frameRect.top - data.y);
+
+                data.width = Math.max(20, Math.min(newWidth, 380 - data.x));
+                data.height = Math.max(20, Math.min(newHeight, 680 - data.y));
+
+                el.style.width = data.width + 'px';
+                el.style.height = data.height + 'px';
+
+                updateListItem(selectedElement);
+                updatePropertyPanel();
+            }
+        }
+
+        function handleMouseUp() {
+            isDragging = false;
+            isResizing = false;
+        }
+
+        function handleKeyDown(e) {
+            if (!selectedElement) return;
+
+            const data = elements[selectedElement];
+            const el = document.getElementById(selectedElement);
+            const step = e.shiftKey ? 10 : 1;
+
+            switch(e.key) {
+                case 'ArrowUp':
+                    e.preventDefault();
+                    data.y = Math.max(0, data.y - step);
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    data.y = Math.min(680 - data.height, data.y + step);
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    data.x = Math.max(0, data.x - step);
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    data.x = Math.min(380 - data.width, data.x + step);
+                    break;
+            }
+
+            el.style.left = data.x + 'px';
+            el.style.top = data.y + 'px';
+
+            updateListItem(selectedElement);
+            updatePropertyPanel();
+        }
+
+        function updateListItem(key) {
+            const data = elements[key];
+            const listItem = document.getElementById('list-' + key);
+            listItem.querySelector('.element-info').textContent =
+                `X: ${data.x} Y: ${data.y} | W: ${data.width} H: ${data.height}`;
+        }
+
+        function updatePropertyPanel() {
+            if (!selectedElement) return;
+
+            const data = elements[selectedElement];
+            const panel = document.getElementById('propertyGroup');
+
+            panel.innerHTML = `
+                <div class="property-row">
+                    <div class="property-label">X</div>
+                    <div class="property-input">
+                        <button onclick="adjustProperty('x', -5)">-</button>
+                        <input type="number" value="${data.x}" onchange="setProperty('x', this.value)">
+                        <button onclick="adjustProperty('x', 5)">+</button>
+                    </div>
+                </div>
+                <div class="property-row">
+                    <div class="property-label">Y</div>
+                    <div class="property-input">
+                        <button onclick="adjustProperty('y', -5)">-</button>
+                        <input type="number" value="${data.y}" onchange="setProperty('y', this.value)">
+                        <button onclick="adjustProperty('y', 5)">+</button>
+                    </div>
+                </div>
+                <div class="property-row">
+                    <div class="property-label">Largeur</div>
+                    <div class="property-input">
+                        <button onclick="adjustProperty('width', -5)">-</button>
+                        <input type="number" value="${data.width}" onchange="setProperty('width', this.value)">
+                        <button onclick="adjustProperty('width', 5)">+</button>
+                    </div>
+                </div>
+                <div class="property-row">
+                    <div class="property-label">Hauteur</div>
+                    <div class="property-input">
+                        <button onclick="adjustProperty('height', -5)">-</button>
+                        <input type="number" value="${data.height}" onchange="setProperty('height', this.value)">
+                        <button onclick="adjustProperty('height', 5)">+</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function adjustProperty(prop, delta) {
+            if (!selectedElement) return;
+
+            const data = elements[selectedElement];
+            const el = document.getElementById(selectedElement);
+
+            data[prop] = Math.max(0, data[prop] + delta);
+
+            if (prop === 'x' || prop === 'y') {
+                el.style[prop === 'x' ? 'left' : 'top'] = data[prop] + 'px';
+            } else {
+                el.style[prop] = data[prop] + 'px';
+            }
+
+            updateListItem(selectedElement);
+            updatePropertyPanel();
+        }
+
+        function setProperty(prop, value) {
+            if (!selectedElement) return;
+
+            const data = elements[selectedElement];
+            const el = document.getElementById(selectedElement);
+
+            data[prop] = Math.max(0, parseInt(value) || 0);
+
+            if (prop === 'x' || prop === 'y') {
+                el.style[prop === 'x' ? 'left' : 'top'] = data[prop] + 'px';
+            } else {
+                el.style[prop] = data[prop] + 'px';
+            }
+
+            updateListItem(selectedElement);
+        }
+
+        function exportMeasurements() {
+            let text = '=== MESURES DU LAYOUT ===\n';
+            text += '(Écran de référence: 380x680)\n\n';
+
+            Object.entries(elements).forEach(([key, data]) => {
+                text += `${data.name}:\n`;
+                text += `  X: ${data.x}\n`;
+                text += `  Y: ${data.y}\n`;
+                text += `  Largeur: ${data.width}\n`;
+                text += `  Hauteur: ${data.height}\n\n`;
+            });
+
+            text += '\n=== CODE FLUTTER ===\n\n';
+            text += '// Positions en pourcentage de l\'écran\n';
+            Object.entries(elements).forEach(([key, data]) => {
+                const xPercent = (data.x / 380 * 100).toFixed(1);
+                const yPercent = (data.y / 680 * 100).toFixed(1);
+                const wPercent = (data.width / 380 * 100).toFixed(1);
+                const hPercent = (data.height / 680 * 100).toFixed(1);
+                text += `// ${data.name}: x=${xPercent}%, y=${yPercent}%, w=${wPercent}%, h=${hPercent}%\n`;
+            });
+
+            document.getElementById('modalText').textContent = text;
+            document.getElementById('modal').classList.add('show');
+        }
+
+        function copyToClipboard() {
+            const text = document.getElementById('modalText').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copié dans le presse-papier!');
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        // Démarrer
+        init();
+    </script>
+</body>
+</html>
