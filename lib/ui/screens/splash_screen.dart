@@ -77,12 +77,12 @@ class _SplashScreenState extends State<SplashScreen>
       CurvedAnimation(parent: _logoController, curve: Curves.easeInOut),
     );
 
-    // Lancer la musique d'intro via le service global
-    try {
-      audioService.playIntroMusic();
-    } catch (e) {
-      print('Erreur audio: $e');
-    }
+    // Audio désactivé temporairement pour debug iOS
+    // try {
+    //   audioService.playIntroMusic();
+    // } catch (e) {
+    //   print('Erreur audio: $e');
+    // }
   }
 
   @override

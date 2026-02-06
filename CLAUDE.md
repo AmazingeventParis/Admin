@@ -1,5 +1,121 @@
 # Historique de Session Claude - Jeu Puzzle (Candy Puzzle)
 
+## Date: 5 Février 2026 - Déploiement TestFlight iOS
+
+---
+
+## Session du 5 Février 2026 - Partie 3 : Déploiement iOS via TestFlight
+
+### 1. Configuration Codemagic (CI/CD pour iOS)
+
+#### Pourquoi Codemagic ?
+- L'utilisateur est sur **Windows** (pas de Mac)
+- Codemagic permet de compiler iOS dans le cloud sur des Mac M2
+- Gratuit : 500 minutes/mois
+
+#### Étapes réalisées
+1. Création du repo GitHub : `https://github.com/aschercohen-a11y/candy-puzzle`
+2. Connexion Codemagic au repo GitHub
+3. Création de l'API Key App Store Connect (KZBZXWQ5YW)
+4. Configuration du code signing automatique
+5. Création du Bundle ID : `com.amazingevent.candypuzzle`
+6. Création de l'app sur App Store Connect
+
+### 2. Problèmes rencontrés et solutions
+
+#### Erreur 1 : Icône iOS avec transparence
+```
+Invalid large app icon. The large app icon can't be transparent or contain an alpha channel.
+```
+**Solution :**
+- Ajout de `IconeIOS.png` dans assets
+- Configuration `flutter_launcher_icons` avec :
+```yaml
+flutter_launcher_icons:
+  ios: true
+  image_path: "assets/ui/IconeIOS.png"
+  remove_alpha_ios: true
+  background_color_ios: "#87CEEB"
+```
+- Régénération des icônes : `dart run flutter_launcher_icons`
+
+#### Erreur 2 : Numéro de build dupliqué
+```
+The bundle version must be higher than the previously uploaded version.
+```
+**Solution :**
+- Incrémenter la version dans `pubspec.yaml` :
+- `version: 1.0.0+1` → `1.0.0+2` → `1.0.0+3`
+
+#### Erreur 3 : App crash au lancement sur iPhone
+**Cause probable :** Device Preview incompatible avec iOS release
+
+**Solution :**
+1. Suppression complète de `device_preview` du projet
+2. Nettoyage de `main.dart` (suppression des imports et code Device Preview)
+3. Retrait de la dépendance dans `pubspec.yaml`
+4. Ajout de try-catch autour de :
+   - `SupabaseService.initialize()`
+   - `audioService.playIntroMusic()`
+   - Méthodes du service audio
+
+### 3. Configuration TestFlight
+
+#### Question Chiffrement (Export Compliance)
+- Réponse : **"Aucun des algorithmes mentionnés ci-dessus"**
+- L'app utilise HTTPS standard fourni par iOS (pas de crypto personnalisée)
+
+#### Groupe de testeurs
+- Groupe interne créé : "Candy"
+- Testeur : Dominique Cohen (iPhone 12 Pro Max, iOS 18.1)
+
+### 4. Fichiers modifiés
+
+| Fichier | Modification |
+|---------|-------------|
+| `pubspec.yaml` | Retrait device_preview, incrémentation version |
+| `lib/main.dart` | Suppression Device Preview, ajout try-catch Supabase |
+| `lib/services/audio_service.dart` | Ajout try-catch playIntroMusic |
+| `lib/ui/screens/splash_screen.dart` | Ajout try-catch audioService |
+| `ios/Runner/Assets.xcassets/AppIcon.appiconset/*` | Nouvelles icônes sans transparence |
+
+### 5. Commandes Codemagic
+
+```bash
+# Le build se fait automatiquement sur Codemagic
+# Workflow : Default Workflow
+# Machine : Mac mini M2
+# Durée moyenne : ~9-10 minutes
+```
+
+### 6. Flux TestFlight
+
+```
+Code → GitHub Push → Codemagic Build → App Store Connect → TestFlight
+                                                              ↓
+                                              Testeurs reçoivent notification
+                                                              ↓
+                                              Mise à jour via app TestFlight
+```
+
+### 7. État actuel
+
+- ✅ Build iOS compilé avec succès
+- ✅ App uploadée sur App Store Connect
+- ✅ Groupe de testeurs créé
+- ⏳ Test en cours (build 3 avec corrections crash)
+- ❓ Lien public TestFlight (à activer dans Réglages du groupe)
+
+### 8. Pour activer le lien public TestFlight
+
+1. App Store Connect → TestFlight → Groupe "Candy"
+2. Onglet **"Réglages"**
+3. Activer **"Lien public"**
+4. Copier le lien `testflight.apple.com/join/XXXXX`
+5. Partager à n'importe qui !
+
+---
+
 ## Date: 5 Février 2026 (Suite)
 
 ---

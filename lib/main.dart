@@ -28,12 +28,12 @@ void main() async {
     ),
   );
 
-  // Initialiser Supabase
-  try {
-    await SupabaseService.initialize();
-  } catch (e) {
-    print('Erreur Supabase init: $e');
-  }
+  // Supabase désactivé temporairement pour debug iOS
+  // try {
+  //   await SupabaseService.initialize();
+  // } catch (e) {
+  //   print('Erreur Supabase init: $e');
+  // }
 
   runApp(const BlockPuzzleApp());
 }
