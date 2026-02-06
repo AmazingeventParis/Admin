@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ui/screens/splash_screen.dart';
-// import 'services/supabase_service.dart';
+import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,12 +28,12 @@ void main() async {
     ),
   );
 
-  // Supabase désactivé temporairement pour debug iOS
-  // try {
-  //   await SupabaseService.initialize();
-  // } catch (e) {
-  //   print('Erreur Supabase init: $e');
-  // }
+  // Initialiser Supabase
+  try {
+    await SupabaseService.initialize();
+  } catch (e) {
+    print('Erreur Supabase init: $e');
+  }
 
   runApp(const BlockPuzzleApp());
 }
