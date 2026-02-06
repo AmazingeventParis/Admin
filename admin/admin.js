@@ -136,6 +136,7 @@ async function loadUsers() {
                     <td>${stats.games_played || 0}</td>
                     <td>${formatNumber(stats.high_score || 0)}</td>
                     <td>
+                        ${isFake ? `<button class="btn btn-play" onclick="openPlayModal('${player.id}', '${player.username}')">🎮 Jouer</button>` : ''}
                         <button class="btn btn-edit" onclick="editScore('${player.id}', ${stats.high_score || 0})">✏️ Score</button>
                         <button class="btn btn-delete" onclick="deleteUser('${player.id}')">🗑️ Supprimer</button>
                     </td>
@@ -415,4 +416,378 @@ function showToast(message, type = 'success') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
+}
+
+// ============================================
+// FONCTIONNALITÉS DUEL - JOUER EN TANT QUE BOT
+// ============================================
+
+let currentPlayerId = null;
+let currentPlayerName = null;
+let currentDuelId = null;
+let currentOpponentScore = null;
+
+// Ouvrir la modal de jeu
+async function openPlayModal(playerId, playerName) {
+    currentPlayerId = playerId;
+    currentPlayerName = playerName;
+
+    document.getElementById('playAsName').textContent = playerName;
+    document.getElementById('playModal').style.display = 'flex';
+    document.getElementById('playModalLoading').style.display = 'block';
+    document.getElementById('playModalContent').style.display = 'none';
+
+    await loadDuelsForPlayer(playerId);
+}
+
+// Fermer la modal de jeu
+function closePlayModal() {
+    document.getElementById('playModal').style.display = 'none';
+    currentPlayerId = null;
+    currentPlayerName = null;
+}
+
+// Charger les duels pour un joueur
+async function loadDuelsForPlayer(playerId) {
+    try {
+        // Charger les duels où ce joueur est impliqué
+        const { data: duels, error } = await supabaseClient
+            .from('duels')
+            .select(`
+                id,
+                seed,
+                status,
+                challenger_id,
+                challenged_id,
+                challenger_score,
+                challenged_score,
+                created_at
+            `)
+            .or(`challenger_id.eq.${playerId},challenged_id.eq.${playerId}`)
+            .in('status', ['pending', 'active'])
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Charger tous les joueurs pour les infos
+        const { data: players } = await supabaseClient
+            .from('players')
+            .select('id, username, photo_url');
+
+        const playersMap = {};
+        players?.forEach(p => playersMap[p.id] = p);
+
+        // Séparer les duels en attente et actifs
+        const pendingDuels = [];
+        const activeDuels = [];
+
+        duels?.forEach(duel => {
+            const isChallenger = duel.challenger_id === playerId;
+            const opponentId = isChallenger ? duel.challenged_id : duel.challenger_id;
+            const opponent = playersMap[opponentId] || { username: 'Inconnu', photo_url: null };
+
+            const duelInfo = {
+                ...duel,
+                isChallenger,
+                opponent,
+                myScore: isChallenger ? duel.challenger_score : duel.challenged_score,
+                opponentScore: isChallenger ? duel.challenged_score : duel.challenger_score
+            };
+
+            if (duel.status === 'pending') {
+                if (isChallenger) {
+                    // Le challenger peut jouer immédiatement après avoir créé le défi
+                    if (duelInfo.myScore === null) {
+                        activeDuels.push(duelInfo);
+                    }
+                } else {
+                    // Le challenged doit accepter d'abord
+                    pendingDuels.push(duelInfo);
+                }
+            } else if (duel.status === 'active') {
+                // Si on n'a pas encore soumis son score
+                if (duelInfo.myScore === null) {
+                    activeDuels.push(duelInfo);
+                }
+            }
+        });
+
+        // Afficher les duels en attente
+        displayPendingDuels(pendingDuels);
+        displayActiveDuels(activeDuels);
+
+        // Charger la liste des joueurs pour défier
+        await loadPlayersForChallenge(playerId, players);
+
+        document.getElementById('playModalLoading').style.display = 'none';
+        document.getElementById('playModalContent').style.display = 'block';
+
+    } catch (error) {
+        console.error('Erreur chargement duels:', error);
+        showToast('Erreur chargement duels', 'error');
+    }
+}
+
+// Afficher les duels en attente
+function displayPendingDuels(duels) {
+    const container = document.getElementById('pendingDuelsList');
+
+    if (duels.length === 0) {
+        container.innerHTML = '<div class="no-duels">Aucun duel en attente</div>';
+        return;
+    }
+
+    container.innerHTML = duels.map(duel => `
+        <div class="duel-card">
+            <div class="duel-info">
+                ${duel.opponent.photo_url
+                    ? `<img src="${duel.opponent.photo_url}" alt="${duel.opponent.username}">`
+                    : `<div style="width:45px;height:45px;border-radius:50%;background:linear-gradient(135deg,#ff6b9d,#ffc371);display:flex;align-items:center;justify-content:center;font-weight:bold;">${duel.opponent.username?.[0] || '?'}</div>`
+                }
+                <div class="duel-details">
+                    <span class="opponent-name">${duel.opponent.username || 'Inconnu'}</span>
+                    <span class="duel-status">Vous a défié</span>
+                </div>
+            </div>
+            <div class="duel-actions">
+                <button class="btn btn-accept" onclick="acceptDuel('${duel.id}')">✅ Accepter</button>
+                <button class="btn btn-decline" onclick="declineDuel('${duel.id}')">❌ Refuser</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Afficher les duels actifs
+function displayActiveDuels(duels) {
+    const container = document.getElementById('activeDuelsList');
+
+    if (duels.length === 0) {
+        container.innerHTML = '<div class="no-duels">Aucun duel actif à jouer</div>';
+        return;
+    }
+
+    container.innerHTML = duels.map(duel => `
+        <div class="duel-card">
+            <div class="duel-info">
+                ${duel.opponent.photo_url
+                    ? `<img src="${duel.opponent.photo_url}" alt="${duel.opponent.username}">`
+                    : `<div style="width:45px;height:45px;border-radius:50%;background:linear-gradient(135deg,#ff6b9d,#ffc371);display:flex;align-items:center;justify-content:center;font-weight:bold;">${duel.opponent.username?.[0] || '?'}</div>`
+                }
+                <div class="duel-details">
+                    <span class="opponent-name">VS ${duel.opponent.username || 'Inconnu'}</span>
+                    <span class="duel-status">
+                        ${duel.opponentScore !== null
+                            ? `Score adversaire: <span class="duel-score">${formatNumber(duel.opponentScore)}</span>`
+                            : 'Adversaire n\'a pas encore joué'
+                        }
+                    </span>
+                </div>
+            </div>
+            <div class="duel-actions">
+                <button class="btn btn-play" onclick="openSimulateModal('${duel.id}', ${duel.opponentScore}, '${duel.opponent.username}', ${duel.isChallenger})">🎮 Jouer</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Charger les joueurs pour défier
+async function loadPlayersForChallenge(currentId, players) {
+    const select = document.getElementById('challengeTarget');
+    select.innerHTML = '<option value="">Sélectionner un joueur...</option>';
+
+    players?.filter(p => p.id !== currentId).forEach(player => {
+        const option = document.createElement('option');
+        option.value = player.id;
+        option.textContent = player.username || 'Anonyme';
+        select.appendChild(option);
+    });
+}
+
+// Accepter un duel
+async function acceptDuel(duelId) {
+    try {
+        const { error } = await supabaseClient
+            .from('duels')
+            .update({ status: 'active' })
+            .eq('id', duelId);
+
+        if (error) throw error;
+
+        showToast('Duel accepté!', 'success');
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur acceptation:', error);
+        showToast('Erreur acceptation', 'error');
+    }
+}
+
+// Refuser un duel
+async function declineDuel(duelId) {
+    try {
+        const { error } = await supabaseClient
+            .from('duels')
+            .update({ status: 'declined' })
+            .eq('id', duelId);
+
+        if (error) throw error;
+
+        showToast('Duel refusé', 'success');
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur refus:', error);
+        showToast('Erreur refus', 'error');
+    }
+}
+
+// Créer un défi
+async function createChallenge() {
+    const targetId = document.getElementById('challengeTarget').value;
+    if (!targetId) {
+        showToast('Sélectionnez un joueur', 'error');
+        return;
+    }
+
+    try {
+        // Générer un seed aléatoire
+        const seed = Math.floor(Math.random() * 2147483647);
+
+        const { error } = await supabaseClient
+            .from('duels')
+            .insert({
+                challenger_id: currentPlayerId,
+                challenged_id: targetId,
+                seed: seed,
+                status: 'pending'
+            });
+
+        if (error) throw error;
+
+        showToast('Défi envoyé!', 'success');
+        document.getElementById('challengeTarget').value = '';
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur création défi:', error);
+        showToast('Erreur création défi', 'error');
+    }
+}
+
+// Ouvrir la modal de simulation
+function openSimulateModal(duelId, opponentScore, opponentName, isChallenger) {
+    currentDuelId = duelId;
+    currentOpponentScore = opponentScore;
+
+    let info = `Duel contre <strong>${opponentName}</strong>`;
+    if (opponentScore !== null) {
+        info += `<br>Score à battre: <strong style="color:#ffc371">${formatNumber(opponentScore)}</strong>`;
+    } else {
+        info += `<br>L'adversaire n'a pas encore joué`;
+    }
+
+    document.getElementById('simulateInfo').innerHTML = info;
+    document.getElementById('simulateModal').style.display = 'flex';
+
+    // Suggérer un score aléatoire réaliste
+    const suggestedScore = Math.floor(Math.random() * 10000) + 2000;
+    document.getElementById('simulateScore').value = suggestedScore;
+}
+
+// Fermer la modal de simulation
+function closeSimulateModal() {
+    document.getElementById('simulateModal').style.display = 'none';
+    currentDuelId = null;
+    currentOpponentScore = null;
+}
+
+// Soumettre le score simulé
+async function submitSimulatedScore() {
+    const score = parseInt(document.getElementById('simulateScore').value);
+
+    if (isNaN(score) || score < 0) {
+        showToast('Score invalide', 'error');
+        return;
+    }
+
+    try {
+        // Récupérer le duel pour savoir si on est challenger ou challenged
+        const { data: duel, error: duelError } = await supabaseClient
+            .from('duels')
+            .select('*')
+            .eq('id', currentDuelId)
+            .single();
+
+        if (duelError) throw duelError;
+
+        const isChallenger = duel.challenger_id === currentPlayerId;
+        const scoreField = isChallenger ? 'challenger_score' : 'challenged_score';
+        const opponentScoreField = isChallenger ? 'challenged_score' : 'challenger_score';
+
+        // Vérifier si l'adversaire a aussi joué
+        const opponentScore = duel[opponentScoreField];
+        let updateData = { [scoreField]: score };
+
+        // Si les deux ont joué, déterminer le gagnant
+        if (opponentScore !== null) {
+            let winnerId = null;
+            if (score > opponentScore) {
+                winnerId = currentPlayerId;
+            } else if (opponentScore > score) {
+                winnerId = isChallenger ? duel.challenged_id : duel.challenger_id;
+            }
+            // En cas d'égalité, winner_id reste null
+
+            updateData.status = 'completed';
+            updateData.winner_id = winnerId;
+        }
+
+        const { error } = await supabaseClient
+            .from('duels')
+            .update(updateData)
+            .eq('id', currentDuelId);
+
+        if (error) throw error;
+
+        // Mettre à jour le high_score du bot si nécessaire
+        await updateBotHighScore(currentPlayerId, score);
+
+        closeSimulateModal();
+        showToast(`Score ${formatNumber(score)} soumis!`, 'success');
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur soumission score:', error);
+        showToast('Erreur soumission', 'error');
+    }
+}
+
+// Mettre à jour le high score du bot si le nouveau score est meilleur
+async function updateBotHighScore(playerId, newScore) {
+    try {
+        const { data: stats } = await supabaseClient
+            .from('player_stats')
+            .select('high_score, games_played')
+            .eq('player_id', playerId)
+            .single();
+
+        if (stats && newScore > (stats.high_score || 0)) {
+            await supabaseClient
+                .from('player_stats')
+                .update({
+                    high_score: newScore,
+                    games_played: (stats.games_played || 0) + 1
+                })
+                .eq('player_id', playerId);
+        } else if (stats) {
+            await supabaseClient
+                .from('player_stats')
+                .update({
+                    games_played: (stats.games_played || 0) + 1
+                })
+                .eq('player_id', playerId);
+        }
+    } catch (error) {
+        console.error('Erreur mise à jour high score:', error);
+    }
 }

@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/duel.dart';
+import 'notification_service.dart';
+import 'supabase_service.dart';
 
 /// Service gérant toutes les opérations liées aux duels
 class DuelService {
@@ -24,6 +26,13 @@ class DuelService {
           })
           .select()
           .single();
+
+      // Envoyer une notification au joueur défié
+      final challengerName = supabaseService.userName ?? 'Quelqu\'un';
+      await NotificationService.sendDuelChallenge(
+        challengedPlayerId: challengedId,
+        challengerName: challengerName,
+      );
 
       return Duel.fromJson(response);
     } catch (e) {
@@ -99,30 +108,75 @@ class DuelService {
         updates['status'] = 'completed';
       }
 
-      final response = await _client
+      await _client
           .from('duels')
           .update(updates)
-          .eq('id', duelId)
-          .select()
-          .single();
+          .eq('id', duelId);
 
-      return Duel.fromJson(response);
+      // Récupérer le duel mis à jour avec les infos joueurs
+      final updatedDuel = await getDuel(duelId);
+
+      // Envoyer les notifications de résultat si le duel est terminé
+      if (otherScore != null && updatedDuel != null) {
+        final isChallenger = playerId == duel.challengerId;
+        final opponentId = isChallenger ? duel.challengedId : duel.challengerId;
+        final opponentName = isChallenger ? duel.challengedName : duel.challengerName;
+        final myName = isChallenger ? duel.challengerName : duel.challengedName;
+
+        // Notification pour moi (le joueur qui vient de finir)
+        await NotificationService.sendDuelResult(
+          playerId: playerId,
+          opponentName: opponentName ?? 'Adversaire',
+          playerScore: score,
+          opponentScore: otherScore,
+          isWinner: score > otherScore,
+        );
+
+        // Notification pour l'adversaire
+        await NotificationService.sendDuelResult(
+          playerId: opponentId,
+          opponentName: myName ?? 'Adversaire',
+          playerScore: otherScore,
+          opponentScore: score,
+          isWinner: otherScore > score,
+        );
+      }
+
+      return updatedDuel;
     } catch (e) {
       print('Erreur soumission score: $e');
       return null;
     }
   }
 
-  /// Récupère un duel par son ID
+  /// Récupère un duel par son ID (avec infos joueurs)
   Future<Duel?> getDuel(String duelId) async {
     try {
       final response = await _client
           .from('duels')
-          .select()
+          .select('''
+            *,
+            challenger:players!duels_challenger_id_fkey(id, username, photo_url),
+            challenged:players!duels_challenged_id_fkey(id, username, photo_url)
+          ''')
           .eq('id', duelId)
           .single();
 
-      return Duel.fromJson(response);
+      final duel = Duel.fromJson(response);
+
+      // Ajouter les infos du challenger
+      if (response['challenger'] != null) {
+        duel.challengerName = response['challenger']['username'];
+        duel.challengerPhotoUrl = response['challenger']['photo_url'];
+      }
+
+      // Ajouter les infos du challenged
+      if (response['challenged'] != null) {
+        duel.challengedName = response['challenged']['username'];
+        duel.challengedPhotoUrl = response['challenged']['photo_url'];
+      }
+
+      return duel;
     } catch (e) {
       print('Erreur récupération duel: $e');
       return null;

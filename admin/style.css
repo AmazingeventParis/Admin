@@ -364,6 +364,172 @@ td img {
     background: linear-gradient(135deg, #eb3349, #f45c43);
 }
 
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    border: 2px solid rgba(255, 195, 113, 0.3);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 25px;
+    background: rgba(255, 195, 113, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h3 {
+    color: #ffc371;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 2rem;
+    cursor: pointer;
+    transition: color 0.3s;
+}
+
+.modal-close:hover {
+    color: #eb3349;
+}
+
+.modal-body {
+    padding: 25px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.modal-body h4 {
+    color: #38ef7d;
+    margin-bottom: 15px;
+    font-size: 1rem;
+}
+
+/* Duel Cards in Modal */
+.duel-card {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.duel-card .duel-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.duel-card img {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #ffc371;
+}
+
+.duel-card .duel-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.duel-card .opponent-name {
+    font-weight: 600;
+    color: white;
+}
+
+.duel-card .duel-status {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.duel-card .duel-score {
+    color: #ffc371;
+    font-weight: 600;
+}
+
+.duel-card .duel-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-accept {
+    background: linear-gradient(135deg, #11998e, #38ef7d);
+    color: white;
+    padding: 8px 15px;
+    font-size: 0.85rem;
+}
+
+.btn-decline {
+    background: linear-gradient(135deg, #eb3349, #f45c43);
+    color: white;
+    padding: 8px 15px;
+    font-size: 0.85rem;
+}
+
+.btn-play {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 8px 15px;
+    font-size: 0.85rem;
+}
+
+.no-duels {
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+}
+
+/* Challenge Section */
+.challenge-section {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.challenge-section select {
+    flex: 1;
+    padding: 12px 15px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 1rem;
+}
+
+.challenge-section select option {
+    background: #1a1a2e;
+    color: white;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .header h1 {

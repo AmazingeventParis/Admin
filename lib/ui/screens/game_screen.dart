@@ -46,6 +46,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   SeededPieceGenerator? _pieceGenerator;
   String? _duelId;
 
+  // Résultat du duel (après soumission du score)
+  int? _opponentScore;
+  String? _opponentName;
+  String? _opponentPhotoUrl;
+  bool? _isDuelWinner; // true = gagné, false = perdu, null = égalité ou pas encore joué
+
   // Profil utilisateur
   String _userName = 'Joueur';
   String? _userAvatarPath;
@@ -2493,6 +2499,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       // Reset Jelly Bomb
       _activeJellyBombExplosions = [];
       _explodingJellyBombs = {};
+      // Reset Duel result (au cas où)
+      _opponentScore = null;
+      _opponentName = null;
+      _opponentPhotoUrl = null;
+      _isDuelWinner = null;
     });
   }
 
@@ -2519,16 +2530,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     });
   }
 
-  /// Soumet le score du duel
+  /// Soumet le score du duel et récupère les infos de l'adversaire
   Future<void> _submitDuelScore() async {
     final playerId = supabaseService.playerId;
     if (playerId == null || _duelId == null) return;
 
-    await duelService.submitScore(
+    final updatedDuel = await duelService.submitScore(
       duelId: _duelId!,
       playerId: playerId,
       score: _score,
     );
+
+    if (updatedDuel != null && mounted) {
+      // Déterminer qui est l'adversaire
+      final isChallenger = updatedDuel.challengerId == playerId;
+
+      setState(() {
+        if (isChallenger) {
+          _opponentScore = updatedDuel.challengedScore;
+          _opponentName = updatedDuel.challengedName;
+          _opponentPhotoUrl = updatedDuel.challengedPhotoUrl;
+        } else {
+          _opponentScore = updatedDuel.challengerScore;
+          _opponentName = updatedDuel.challengerName;
+          _opponentPhotoUrl = updatedDuel.challengerPhotoUrl;
+        }
+
+        // Déterminer le gagnant si les deux ont joué
+        if (_opponentScore != null) {
+          if (_score > _opponentScore!) {
+            _isDuelWinner = true;
+          } else if (_score < _opponentScore!) {
+            _isDuelWinner = false;
+          } else {
+            _isDuelWinner = null; // Égalité
+          }
+        }
+      });
+    }
   }
 
   /// Sauvegarde les statistiques de la session
@@ -2583,9 +2622,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Text(
                 'GAME OVER',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
@@ -2666,7 +2707,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                   ],
                 ),
               ),
-              if (!isNewHighScore && _highScore > 0) ...[
+              // Afficher le résultat du duel si on est en mode duel
+              if (_isDuelMode) ...[
+                const SizedBox(height: 20),
+                _buildDuelResult(),
+              ] else if (!isNewHighScore && _highScore > 0) ...[
                 const SizedBox(height: 10),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -2685,46 +2730,279 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                 ),
               ],
               const SizedBox(height: 30),
-              GestureDetector(
-                onTap: _restartGame,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF32CD32), Color(0xFF228B22)],
-                    ),
-                    borderRadius: BorderRadius.circular(25),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF32CD32).withOpacity(0.5),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.5),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.refresh, color: Colors.white, size: 28),
-                      SizedBox(width: 10),
-                      Text(
-                        'REJOUER',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 2,
+              // Boutons d'action
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Bouton Accueil
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                        ),
+                        borderRadius: BorderRadius.circular(25),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF667eea).withOpacity(0.5),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.5),
+                          width: 2,
                         ),
                       ),
-                    ],
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.close, color: Colors.white, size: 24),
+                          SizedBox(width: 8),
+                          Text(
+                            'QUITTER',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  // En mode duel, pas de bouton rejouer
+                  if (!_isDuelMode) ...[
+                    const SizedBox(width: 15),
+                    // Bouton Rejouer
+                    GestureDetector(
+                      onTap: _restartGame,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF32CD32), Color(0xFF228B22)],
+                          ),
+                          borderRadius: BorderRadius.circular(25),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF32CD32).withOpacity(0.5),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.5),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.refresh, color: Colors.white, size: 24),
+                            SizedBox(width: 8),
+                            Text(
+                              'REJOUER',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Construit l'affichage du résultat du duel
+  Widget _buildDuelResult() {
+    // Si l'adversaire n'a pas encore joué
+    if (_opponentScore == null) {
+      return Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.hourglass_empty, color: Colors.white70, size: 30),
+            const SizedBox(height: 10),
+            Text(
+              _opponentName != null
+                  ? '$_opponentName n\'a pas encore joué'
+                  : 'En attente de l\'adversaire...',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Affichage VS avec les deux scores
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: _isDuelWinner == true
+              ? [const Color(0xFF32CD32).withOpacity(0.3), const Color(0xFF228B22).withOpacity(0.3)]
+              : _isDuelWinner == false
+                  ? [const Color(0xFFEB3349).withOpacity(0.3), const Color(0xFFF45C43).withOpacity(0.3)]
+                  : [Colors.white.withOpacity(0.2), Colors.white.withOpacity(0.2)],
+        ),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: _isDuelWinner == true
+              ? const Color(0xFF32CD32)
+              : _isDuelWinner == false
+                  ? const Color(0xFFEB3349)
+                  : Colors.white54,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Texte résultat
+          Text(
+            _isDuelWinner == true
+                ? '🏆 VICTOIRE!'
+                : _isDuelWinner == false
+                    ? '😢 DÉFAITE'
+                    : '🤝 ÉGALITÉ',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: _isDuelWinner == true
+                  ? const Color(0xFF32CD32)
+                  : _isDuelWinner == false
+                      ? const Color(0xFFEB3349)
+                      : Colors.white,
+            ),
+          ),
+          const SizedBox(height: 15),
+          // VS Layout
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Mon score
+              _buildPlayerScoreCard(
+                name: _userName,
+                score: _score,
+                photoUrl: _googlePhotoUrl,
+                isWinner: _isDuelWinner == true,
+              ),
+              // VS
+              const Text(
+                'VS',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70,
+                ),
+              ),
+              // Score adversaire
+              _buildPlayerScoreCard(
+                name: _opponentName ?? 'Adversaire',
+                score: _opponentScore!,
+                photoUrl: _opponentPhotoUrl,
+                isWinner: _isDuelWinner == false,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Carte de score d'un joueur dans le résultat du duel
+  Widget _buildPlayerScoreCard({
+    required String name,
+    required int score,
+    String? photoUrl,
+    required bool isWinner,
+  }) {
+    return Column(
+      children: [
+        // Avatar
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isWinner ? const Color(0xFFFFD700) : Colors.white54,
+              width: isWinner ? 3 : 2,
+            ),
+            boxShadow: isWinner
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFFFD700).withOpacity(0.5),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : null,
+          ),
+          child: ClipOval(
+            child: photoUrl != null
+                ? Image.network(
+                    photoUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildDefaultAvatar(name),
+                  )
+                : _buildDefaultAvatar(name),
+          ),
+        ),
+        const SizedBox(height: 5),
+        // Nom
+        Text(
+          name.length > 10 ? '${name.substring(0, 10)}...' : name,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.white70,
+          ),
+        ),
+        // Score
+        Text(
+          '$score',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isWinner ? const Color(0xFFFFD700) : Colors.white,
+          ),
+        ),
+        if (isWinner)
+          const Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 16),
+      ],
+    );
+  }
+
+  Widget _buildDefaultAvatar(String name) {
+    return Container(
+      color: const Color(0xFFFF6B9D),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
           ),
         ),
       ),

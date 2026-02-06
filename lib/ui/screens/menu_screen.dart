@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 import '../../services/duel_service.dart';
+import '../../services/friend_service.dart';
 import '../widgets/candy_ui.dart';
 import 'game_screen.dart';
 import 'profile_screen.dart';
@@ -15,7 +17,7 @@ class MenuScreen extends StatefulWidget {
   State<MenuScreen> createState() => _MenuScreenState();
 }
 
-class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
+class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   String _userName = 'Joueur';
   String? _googlePhotoUrl;
   int _pendingDuelCount = 0;
@@ -28,11 +30,48 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   late AnimationController _menuButtonController;
   late Animation<double> _menuButtonAnimation;
 
+  // Timer pour mise à jour du statut en ligne
+  Timer? _onlineStatusTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUserData();
     _setupAnimations();
+    _startOnlineStatusUpdater();
+  }
+
+  /// Détecte quand l'app passe en arrière-plan ou revient
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // App en arrière-plan ou fermée → mettre hors ligne immédiatement
+      friendService.setOffline(playerId);
+    } else if (state == AppLifecycleState.resumed) {
+      // App revenue au premier plan → mettre en ligne
+      _updateOnlineStatus();
+    }
+  }
+
+  /// Démarre le timer pour mettre à jour le statut "en ligne" toutes les minutes
+  void _startOnlineStatusUpdater() {
+    _updateOnlineStatus(); // Mise à jour immédiate
+    _onlineStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _updateOnlineStatus();
+    });
+  }
+
+  /// Met à jour le statut "en ligne" dans la base de données
+  Future<void> _updateOnlineStatus() async {
+    final playerId = supabaseService.playerId;
+    if (playerId != null) {
+      await friendService.updateOnlineStatus(playerId);
+    }
   }
 
   void _setupAnimations() {
@@ -79,6 +118,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _onlineStatusTimer?.cancel();
     _buttonController.dispose();
     _menuButtonController.dispose();
     super.dispose();

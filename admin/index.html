@@ -141,6 +141,58 @@
 
         <!-- Toast Notifications -->
         <div class="toast" id="toast"></div>
+
+        <!-- Modal Jouer en tant que Bot -->
+        <div class="modal-overlay" id="playModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>🎮 Jouer en tant que <span id="playAsName">Bot</span></h3>
+                    <button class="modal-close" onclick="closePlayModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="playModalLoading" class="loading">
+                        <div class="spinner"></div>
+                        <p>Chargement des duels...</p>
+                    </div>
+                    <div id="playModalContent" style="display: none;">
+                        <h4>📩 Duels en attente</h4>
+                        <div id="pendingDuelsList"></div>
+
+                        <h4 style="margin-top: 20px;">⚔️ Duels actifs (à jouer)</h4>
+                        <div id="activeDuelsList"></div>
+
+                        <h4 style="margin-top: 20px;">📤 Défier un joueur</h4>
+                        <div class="challenge-section">
+                            <select id="challengeTarget">
+                                <option value="">Sélectionner un joueur...</option>
+                            </select>
+                            <button class="btn btn-generate" onclick="createChallenge()">⚔️ Défier</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Simuler Partie -->
+        <div class="modal-overlay" id="simulateModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>🎯 Simuler une partie</h3>
+                    <button class="modal-close" onclick="closeSimulateModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p id="simulateInfo"></p>
+                    <div class="control-group" style="margin: 20px 0;">
+                        <label for="simulateScore">Score à soumettre :</label>
+                        <input type="number" id="simulateScore" value="5000" min="0" max="999999">
+                    </div>
+                    <div class="preview-actions">
+                        <button class="btn btn-cancel" onclick="closeSimulateModal()">Annuler</button>
+                        <button class="btn btn-confirm" onclick="submitSimulatedScore()">✅ Soumettre le score</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="admin.js"></script>

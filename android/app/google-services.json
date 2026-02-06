@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "412625195589",
+    "project_id": "candy-885de",
+    "storage_bucket": "candy-885de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:412625195589:android:b6f7ad5536029ef9d0892c",
+        "android_client_info": {
+          "package_name": "com.example.blockpuzzle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6gWx5XjmDR7Gkzt-_xauu2OVKbaImwQw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

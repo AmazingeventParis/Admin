@@ -263,6 +263,19 @@ class FriendService {
       print('Erreur mise à jour statut en ligne: $e');
     }
   }
+
+  /// Met le joueur hors ligne immédiatement
+  Future<void> setOffline(String playerId) async {
+    try {
+      // Mettre last_seen_at à 10 minutes dans le passé pour être immédiatement hors ligne
+      final offlineTime = DateTime.now().subtract(const Duration(minutes: 10));
+      await _client.from('players').update({
+        'last_seen_at': offlineTime.toIso8601String(),
+      }).eq('id', playerId);
+    } catch (e) {
+      print('Erreur mise hors ligne: $e');
+    }
+  }
 }
 
 // Instance globale
