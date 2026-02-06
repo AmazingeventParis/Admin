@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
+import '../../services/duel_service.dart';
 import '../widgets/candy_ui.dart';
 import 'game_screen.dart';
 import 'profile_screen.dart';
 import 'auth_screen.dart';
 import 'leaderboard_screen.dart';
+import 'duel_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -16,6 +18,7 @@ class MenuScreen extends StatefulWidget {
 class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   String _userName = 'Joueur';
   String? _googlePhotoUrl;
+  int _pendingDuelCount = 0;
 
   // Animation pour le bouton JOUER
   late AnimationController _buttonController;
@@ -60,6 +63,17 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
         _userName = supabaseService.userName!;
         _googlePhotoUrl = supabaseService.userAvatar;
       });
+    }
+
+    // Charger le nombre de duels en attente
+    final playerId = supabaseService.playerId;
+    if (playerId != null) {
+      final count = await duelService.getPendingDuelCount(playerId);
+      if (mounted) {
+        setState(() {
+          _pendingDuelCount = count;
+        });
+      }
     }
   }
 
@@ -108,6 +122,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
         content: Text('Messages - Bientôt disponible'),
         backgroundColor: Colors.blue,
       ),
+    );
+  }
+
+  void _openDuel() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const DuelScreen()),
     );
   }
 
@@ -247,7 +268,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
   Widget _buildBottomMenu(double screenWidth) {
     final menuHeight = screenWidth * 0.22;
-    final buttonSize = screenWidth * 0.25;
+    final buttonSize = screenWidth * 0.20; // Réduit pour 4 boutons
 
     return Container(
       width: screenWidth,
@@ -276,15 +297,17 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                 'assets/ui/boutonleader.png',
                 buttonSize,
                 _openLeaderboard,
-                0.33,
+                0.25,
               ),
               // Bouton Messages (animé)
               _buildAnimatedMenuButton(
                 'assets/ui/boutonmessages.png',
                 buttonSize,
                 _openMessages,
-                0.66,
+                0.50,
               ),
+              // Bouton Duel (animé) avec badge
+              _buildDuelButtonWithBadge(buttonSize),
             ],
           ),
         ],
@@ -321,6 +344,49 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   }
 
   // Bouton statique (page courante - pas d'animation)
+  /// Bouton Duel avec badge de notification
+  Widget _buildDuelButtonWithBadge(double size) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildAnimatedMenuButton(
+          'assets/ui/boutonduel.png',
+          size,
+          _openDuel,
+          0.75,
+        ),
+        if (_pendingDuelCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                _pendingDuelCount > 9 ? '9+' : '$_pendingDuelCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildStaticMenuButton(String asset, double size) {
     return Opacity(
       opacity: 0.6,

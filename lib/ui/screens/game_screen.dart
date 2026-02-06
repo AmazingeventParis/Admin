@@ -10,6 +10,8 @@ import '../../services/stats_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/audio_service.dart';
 import '../../services/screen_shake_service.dart';
+import '../../services/duel_service.dart';
+import '../../logic/seeded_piece_generator.dart';
 import '../widgets/cell_widget.dart';
 import '../widgets/piece_widget.dart';
 import '../widgets/particle_effect.dart';
@@ -20,7 +22,14 @@ import '../widgets/sugar_rush_widget.dart';
 import 'profile_screen.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  final int? duelSeed;  // Si fourni, active le mode duel
+  final String? duelId; // ID du duel pour soumettre le score
+
+  const GameScreen({
+    super.key,
+    this.duelSeed,
+    this.duelId,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -31,6 +40,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   List<Piece?> _availablePieces = [];
   final GlobalKey _gridKey = GlobalKey();
   double _cellSize = 0;
+
+  // Mode duel
+  bool _isDuelMode = false;
+  SeededPieceGenerator? _pieceGenerator;
+  String? _duelId;
 
   // Profil utilisateur
   String _userName = 'Joueur';
@@ -134,6 +148,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Initialiser le mode duel si un seed est fourni
+    if (widget.duelSeed != null) {
+      _isDuelMode = true;
+      _duelId = widget.duelId;
+      _pieceGenerator = SeededPieceGenerator(widget.duelSeed!);
+    }
+
     _gameState = GameState.initial();
     _generateNewPieces();
     _setupAnimations();
@@ -952,8 +974,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   }
 
   void _generateNewPieces() {
+    // Utilise la même logique pour normal et duel
+    // La différence: en mode duel, on utilise un Random seedé
+    _generateNewPiecesRandom();
+  }
+
+  /// Génère les pièces (avec ou sans seed selon le mode)
+  void _generateNewPiecesRandom() {
     final allPieces = List<Piece>.from(PiecesCatalog.main);
-    allPieces.shuffle();
+
+    // En mode duel, utiliser le random seedé pour garantir les mêmes pièces
+    if (_isDuelMode && _pieceGenerator != null) {
+      _pieceGenerator!.shuffleList(allPieces);
+    } else {
+      allPieces.shuffle();
+    }
 
     // Compter les cellules vides
     int emptyCells = 0;
@@ -983,7 +1018,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     if (playablePieces.length < 3) {
       // Ajouter des petites pièces en priorité
       final smallPieces = allPieces.where((p) => p.blocks.length <= 2).toList();
-      smallPieces.shuffle();
+      if (_isDuelMode && _pieceGenerator != null) {
+        _pieceGenerator!.shuffleList(smallPieces);
+      } else {
+        smallPieces.shuffle();
+      }
       for (final piece in smallPieces) {
         if (!playablePieces.contains(piece)) {
           playablePieces.add(piece);
@@ -993,7 +1032,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     }
 
     // Mélanger et sélectionner 3 pièces
-    playablePieces.shuffle();
+    if (_isDuelMode && _pieceGenerator != null) {
+      _pieceGenerator!.shuffleList(playablePieces);
+    } else {
+      playablePieces.shuffle();
+    }
 
     _availablePieces = [
       playablePieces.isNotEmpty ? playablePieces[0] : allPieces[0],
@@ -2465,9 +2508,27 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     // Aucune pièce ne peut être placée = Game Over
     _saveHighScore();
     _saveSessionStats();
+
+    // Si mode duel, soumettre le score
+    if (_isDuelMode && _duelId != null) {
+      _submitDuelScore();
+    }
+
     setState(() {
       _isGameOver = true;
     });
+  }
+
+  /// Soumet le score du duel
+  Future<void> _submitDuelScore() async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null || _duelId == null) return;
+
+    await duelService.submitScore(
+      duelId: _duelId!,
+      playerId: playerId,
+      score: _score,
+    );
   }
 
   /// Sauvegarde les statistiques de la session

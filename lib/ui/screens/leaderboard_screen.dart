@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
+import '../../services/duel_service.dart';
 import 'menu_screen.dart';
+import 'duel_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -12,6 +14,7 @@ class LeaderboardScreen extends StatefulWidget {
 class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _leaderboard = [];
   bool _isLoading = true;
+  int _pendingDuelCount = 0;
 
   // Animation pour les boutons du menu en bas
   late AnimationController _menuButtonController;
@@ -21,7 +24,20 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   void initState() {
     super.initState();
     _loadLeaderboard();
+    _loadPendingDuels();
     _setupAnimations();
+  }
+
+  Future<void> _loadPendingDuels() async {
+    final playerId = supabaseService.playerId;
+    if (playerId != null) {
+      final count = await duelService.getPendingDuelCount(playerId);
+      if (mounted) {
+        setState(() {
+          _pendingDuelCount = count;
+        });
+      }
+    }
   }
 
   void _setupAnimations() {
@@ -509,7 +525,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   // Menu de navigation en bas (même style que menu_screen)
   Widget _buildBottomMenu(double screenWidth) {
     final menuHeight = screenWidth * 0.22;
-    final buttonSize = screenWidth * 0.25;
+    final buttonSize = screenWidth * 0.20; // Réduit pour 4 boutons
 
     return Container(
       width: screenWidth,
@@ -551,9 +567,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
                 buttonSize,
                 () {
                   // TODO: Navigation vers Messages
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Messages - Bientôt disponible'),
+                      backgroundColor: Colors.blue,
+                    ),
+                  );
                 },
-                0.66,
+                0.50,
               ),
+              // Bouton Duel (animé) avec badge
+              _buildDuelButtonWithBadge(buttonSize),
             ],
           ),
         ],
@@ -591,6 +615,54 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   }
 
   // Bouton statique (page courante - pas d'animation)
+  /// Bouton Duel avec badge de notification
+  Widget _buildDuelButtonWithBadge(double size) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildAnimatedMenuButton(
+          'assets/ui/boutonduel.png',
+          size,
+          () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DuelScreen()),
+            );
+          },
+          0.75,
+        ),
+        if (_pendingDuelCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                _pendingDuelCount > 9 ? '9+' : '$_pendingDuelCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildStaticMenuButton(String asset, double size) {
     return Opacity(
       opacity: 0.6,

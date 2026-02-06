@@ -1,5 +1,147 @@
 # Historique de Session Claude - Jeu Puzzle (Candy Puzzle)
 
+## Date: 6 Février 2026 - Résolution Crash iOS + Google Sign-In iOS
+
+---
+
+## Session du 6 Février 2026 - Débogage et Google Sign-In iOS
+
+### 1. Problème Principal : App Crash au Lancement (Builds 1-7)
+
+#### Symptôme
+L'application se fermait immédiatement après l'ouverture sur iPhone, sans aucun message d'erreur visible dans App Store Connect.
+
+#### Cause Racine Identifiée
+L'application était compilée en mode **DEBUG** au lieu de **RELEASE**.
+
+#### Message d'erreur sur iPhone (Build 7)
+```
+In iOS 14+, debug mode Flutter apps can only be launched from Flutter tooling...
+```
+
+#### Solution
+Dans **Codemagic** → Build settings → **Mode: Release** (pas Debug)
+
+#### Approche de débogage utilisée
+1. Retrait de Device Preview ❌ (pas la cause)
+2. Ajout try-catch autour de Supabase/Audio ❌ (pas la cause)
+3. Splash screen minimaliste ❌ (pas la cause)
+4. Création du Podfile iOS ❌ (pas la cause)
+5. **Build 8 en mode RELEASE** ✅ **SOLUTION**
+
+---
+
+### 2. Problème Secondaire : Crash Google Sign-In (Builds 8-9)
+
+#### Symptôme
+L'app fonctionnait en mode "Jouer sans compte" mais crashait lors du clic sur "Connexion Google".
+
+#### Cause
+iOS nécessite un **Client ID spécifique** différent d'Android/Web.
+
+#### Solution en 3 étapes
+
+**Étape 1 : Créer un iOS Client ID dans Google Cloud Console**
+1. Google Cloud Console → APIs & Services → Credentials
+2. Create Credentials → OAuth client ID
+3. Application type: **iOS**
+4. Bundle ID: `com.amazingevent.candypuzzle`
+5. Copier le Client ID généré
+
+**Étape 2 : Configurer `ios/Runner/Info.plist`**
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleTypeRole</key>
+    <string>Editor</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>com.googleusercontent.apps.329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40</string>
+    </array>
+  </dict>
+</array>
+<key>GIDClientID</key>
+<string>329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com</string>
+```
+
+**Étape 3 : Mettre à jour `supabase_service.dart`**
+```dart
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+// iOS Client ID from Google Cloud Console
+static const String _iosClientId = '329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com';
+
+// Dans signInWithGoogle():
+final GoogleSignIn googleSignIn = GoogleSignIn(
+  clientId: !kIsWeb && Platform.isIOS ? _iosClientId : null,
+  serverClientId: _webClientId,
+);
+```
+
+---
+
+### 3. Client IDs Google OAuth - Récapitulatif
+
+| Plateforme | Client ID | Utilisation |
+|------------|-----------|-------------|
+| Web/Android | `329868845376-hbh8plnscagl2smu97pphatm0kanmdg2.apps.googleusercontent.com` | `serverClientId` |
+| iOS | `329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com` | `clientId` sur iOS |
+
+**Important** : Le URL Scheme iOS = Client ID inversé : `com.googleusercontent.apps.XXX`
+
+---
+
+### 4. Historique des Builds TestFlight
+
+| Build | Version | Mode | Résultat | Notes |
+|-------|---------|------|----------|-------|
+| 1 | 1.0.0+1 | Debug | ❌ Crash | Premier test |
+| 2 | 1.0.0+2 | Debug | ❌ Crash | Sans Device Preview |
+| 3 | 1.0.0+3 | Debug | ❌ Crash | Avec try-catch |
+| 4 | 1.0.0+4 | Debug | ❌ Crash | Splash minimaliste |
+| 5 | 1.0.0+5 | Debug | ❌ Crash | Test audio |
+| 6 | 1.0.0+6 | Debug | ❌ Crash | Avec Podfile |
+| 7 | 1.0.0+7 | Debug | ❌ Crash | Message debug visible |
+| 8 | 1.0.0+8 | **Release** | ⚠️ Partiel | App OK, Google crash |
+| 9 | 1.0.0+9 | Release | ⚠️ Partiel | iOS Client ID ajouté |
+| 10 | 1.0.0+10 | Release | ✅ **OK** | **Tout fonctionne !** |
+
+---
+
+### 5. Fichiers Modifiés (6 Février)
+
+| Fichier | Modification |
+|---------|-------------|
+| `pubspec.yaml` | Version 1.0.0+10 |
+| `lib/services/supabase_service.dart` | Ajout iOS Client ID + détection plateforme |
+| `ios/Runner/Info.plist` | URL Schemes + GIDClientID pour Google Sign-In |
+
+---
+
+### 6. Leçons Apprises - iOS TestFlight
+
+1. **Toujours compiler en RELEASE** pour TestFlight (mode Debug = crash immédiat sur iOS 14+)
+2. **iOS et Android ont des Client ID différents** pour Google Sign-In
+3. **Le URL Scheme iOS** doit être le Client ID inversé (`com.googleusercontent.apps.XXX`)
+4. **Incrémenter la version** à chaque upload (le bundle version doit être unique)
+5. **Pas de rapport de crash** dans App Store Connect pour les apps Debug (elles ne démarrent pas)
+
+---
+
+### 7. Configuration Codemagic Finale
+
+```
+Platform: iOS
+Mode: Release ← CRITIQUE
+Build type: App Store / TestFlight
+Code Signing: Automatic
+Publishing: App Store Connect
+```
+
+---
+
 ## Date: 5 Février 2026 - Déploiement TestFlight iOS
 
 ---

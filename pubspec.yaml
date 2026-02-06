@@ -1,7 +1,7 @@
 name: block_puzzle
 description: A classic block puzzle game built with Flutter.
 publish_to: 'none'
-version: 1.0.0+10
+version: 1.0.0+11
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -53,6 +53,8 @@ flutter:
     - assets/ui/Boutonaccueil.png
     - assets/ui/boutonleader.png
     - assets/ui/boutonmessages.png
+    - assets/ui/boutonduel.png
+    - assets/ui/fondduel.png
     - assets/ui/PageLeader.png
     - assets/ui/Fondleader.png
     - assets/ui/texteleaderboard.png

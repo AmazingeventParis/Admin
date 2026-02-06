@@ -35,6 +35,9 @@ class SupabaseService {
   /// Récupère l'utilisateur actuel
   User? get currentUser => _currentUser;
 
+  /// Récupère l'ID du joueur dans la base de données
+  String? get playerId => _playerId;
+
   /// Récupère l'email de l'utilisateur connecté
   String? get userEmail => _currentUser?.email;
 
