@@ -4,6 +4,19 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com</string>
 	<key>CFBundleDisplayName</key>
 	<string>Block Puzzle</string>
 	<key>CFBundleExecutable</key>

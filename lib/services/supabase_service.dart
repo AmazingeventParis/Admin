@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -7,8 +9,11 @@ class SupabaseService {
   static const String _supabaseUrl = 'https://icujwpwicsmyuyidubqf.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljdWp3cHdpY3NteXV5aWR1YnFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMTk5NjEsImV4cCI6MjA4NTY5NTk2MX0.PddUsHjUcHaJfeDciB8BYAVE50oNWG9AwkLLYjMFUl4';
 
-  // Web Client ID from Google Cloud Console
+  // Web Client ID from Google Cloud Console (pour Android)
   static const String _webClientId = '329868845376-hbh8plnscagl2smu97pphatm0kanmdg2.apps.googleusercontent.com';
+
+  // iOS Client ID from Google Cloud Console
+  static const String _iosClientId = '329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com';
 
   static SupabaseClient get client => Supabase.instance.client;
 
@@ -52,7 +57,9 @@ class SupabaseService {
   /// Connexion avec Google
   Future<bool> signInWithGoogle() async {
     try {
+      // Utiliser le bon client ID selon la plateforme
       final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: !kIsWeb && Platform.isIOS ? _iosClientId : null,
         serverClientId: _webClientId,
       );
 
