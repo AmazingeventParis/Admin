@@ -18,7 +18,7 @@ class DuelScreen extends StatefulWidget {
   State<DuelScreen> createState() => _DuelScreenState();
 }
 
-class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
+class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   // Onglet actif: 0=Duels, 1=Amis, 2=En Ligne, 3=Tous
   int _activeTab = 0;
 
@@ -27,6 +27,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
   List<Duel> _pendingDuels = [];    // Duels en attente (défis reçus)
   List<Duel> _activeDuels = [];     // Duels actifs (en cours)
   List<Duel> _myPendingChallenges = []; // Défis que j'ai envoyés
+  List<Duel> _completedDuels = [];  // Duels terminés (résultats)
   List<PlayerSummary> _pendingFriendRequests = []; // Demandes d'amis reçues
   bool _isLoading = true;
   String _searchQuery = '';
@@ -41,17 +42,57 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
   // Abonnements temps réel Supabase
   RealtimeChannel? _duelsChannel;
   RealtimeChannel? _friendsChannel;
+  RealtimeChannel? _playersOnlineChannel;
 
   // Timer pour rafraîchissement automatique (backup si realtime ne fonctionne pas)
   Timer? _refreshTimer;
 
+  // Timer pour mise à jour du statut online
+  Timer? _onlineStatusTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupAnimations();
     _loadData();
     _setupRealtimeSubscriptions();
     _startAutoRefresh();
+    _startOnlineStatusUpdates();
+  }
+
+  /// Démarre les mises à jour du statut online toutes les 30 secondes
+  void _startOnlineStatusUpdates() {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    // Mettre à jour immédiatement
+    friendService.updateOnlineStatus(playerId);
+
+    // Puis toutes les 30 secondes
+    _onlineStatusTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        friendService.updateOnlineStatus(playerId);
+      }
+    });
+  }
+
+  /// Gère les changements d'état de l'application (avant-plan/arrière-plan)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // App en arrière-plan ou inactive → mettre offline immédiatement
+      friendService.setOffline(playerId);
+    } else if (state == AppLifecycleState.resumed) {
+      // App revenue au premier plan → mettre online
+      friendService.updateOnlineStatus(playerId);
+      // Recharger les données
+      _loadData();
+    }
   }
 
   void _startAutoRefresh() {
@@ -99,6 +140,22 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
           },
         )
         .subscribe();
+
+    // Écouter les changements de statut online des joueurs (last_seen_at)
+    _playersOnlineChannel = Supabase.instance.client
+        .channel('players_online_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'players',
+          callback: (payload) {
+            // Recharger la liste des joueurs quand un statut change
+            if (mounted && (_activeTab == 1 || _activeTab == 2 || _activeTab == 3)) {
+              _loadPlayersForTab();
+            }
+          },
+        )
+        .subscribe();
   }
 
   Future<void> _refreshDuelsData() async {
@@ -107,14 +164,16 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
 
     // Garder le compte actuel pour comparaison
     final previousPendingCount = _pendingDuels.length;
+    final previousSentChallengesIds = _myPendingChallenges.map((d) => d.id).toList();
 
     // Recharger uniquement les duels sans toucher au reste
     final pendingDuels = await duelService.getPendingDuels(playerId);
     final activeDuels = await duelService.getActiveDuels(playerId);
     final myPendingChallenges = await duelService.getMySentChallenges(playerId);
+    final completedDuels = await duelService.getDuelHistory(playerId, limit: 10);
 
     if (mounted) {
-      // Vérifier s'il y a un nouveau défi
+      // Vérifier s'il y a un nouveau défi reçu
       if (pendingDuels.length > previousPendingCount) {
         // Trouver le nouveau défi
         final newDuel = pendingDuels.firstWhere(
@@ -124,10 +183,33 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
         _showNewDuelNotification(newDuel);
       }
 
+      // Vérifier si un de mes défis envoyés a été accepté ou refusé
+      for (final oldChallengeId in previousSentChallengesIds) {
+        final stillPending = myPendingChallenges.any((d) => d.id == oldChallengeId);
+        final nowActive = activeDuels.any((d) => d.id == oldChallengeId);
+
+        if (!stillPending) {
+          // Trouver le défi dans l'ancienne liste
+          final oldDuel = _myPendingChallenges.firstWhere(
+            (d) => d.id == oldChallengeId,
+            orElse: () => _myPendingChallenges.first,
+          );
+
+          if (nowActive) {
+            // Le défi a été accepté !
+            _showDuelAcceptedNotification(oldDuel);
+          } else {
+            // Le défi a été refusé
+            _showDuelDeclinedNotification(oldDuel);
+          }
+        }
+      }
+
       setState(() {
         _pendingDuels = pendingDuels;
         _activeDuels = activeDuels;
         _myPendingChallenges = myPendingChallenges;
+        _completedDuels = completedDuels;
       });
     }
   }
@@ -186,6 +268,107 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
 
     // Auto-fermer après 5 secondes
     Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      }
+    });
+  }
+
+  void _showDuelDeclinedNotification(Duel duel) {
+    // Notification élégante en haut
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        elevation: 6,
+        leading: const Icon(Icons.cancel, color: Colors.white, size: 22),
+        backgroundColor: Colors.red[600]!,
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+        content: Text(
+          '${duel.challengedName ?? "L\'adversaire"} a refusé ton défi',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Auto-fermer après 5 secondes
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      }
+    });
+  }
+
+  void _showDuelAcceptedNotification(Duel duel) {
+    // Notification élégante en haut - vert pour accepté
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        elevation: 6,
+        leading: const Icon(Icons.check_circle, color: Colors.white, size: 22),
+        backgroundColor: Colors.green[600]!,
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+        content: Text(
+          '🎮 ${duel.challengedName ?? "L\'adversaire"} a accepté ton défi ! À toi de jouer !',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              // Aller sur l'onglet Duels pour jouer
+              setState(() => _activeTab = 0);
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            child: const Text(
+              'JOUER',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            child: const Text(
+              '✕',
+              style: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Auto-fermer après 8 secondes (plus long car important)
+    Future.delayed(const Duration(seconds: 8), () {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
       }
@@ -297,11 +480,21 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // Retirer l'observateur de lifecycle
+    WidgetsBinding.instance.removeObserver(this);
     // Annuler le timer de rafraîchissement
     _refreshTimer?.cancel();
+    // Annuler le timer de statut online
+    _onlineStatusTimer?.cancel();
+    // Mettre offline avant de quitter
+    final playerId = supabaseService.playerId;
+    if (playerId != null) {
+      friendService.setOffline(playerId);
+    }
     // Annuler les abonnements temps réel
     _duelsChannel?.unsubscribe();
     _friendsChannel?.unsubscribe();
+    _playersOnlineChannel?.unsubscribe();
     _menuButtonController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -327,6 +520,9 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
 
     // Charger les défis que j'ai envoyés (en attente de réponse)
     _myPendingChallenges = await duelService.getMySentChallenges(playerId);
+
+    // Charger les duels terminés (résultats)
+    _completedDuels = await duelService.getDuelHistory(playerId, limit: 10);
 
     // Charger les demandes d'amis reçues
     _pendingFriendRequests = await friendService.getPendingRequests(playerId);
@@ -428,27 +624,28 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
     );
 
     if (duel != null && mounted) {
-      // Lancer la partie avec le seed
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => GameScreen(
-            duelSeed: duel.seed,
-            duelId: duel.id,
-            opponentId: player.id,
-            opponentName: player.username,
-            opponentPhotoUrl: player.photoUrl,
-          ),
+      // Afficher confirmation - on ne joue PAS encore, on attend que l'adversaire accepte
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Défi envoyé à ${player.username} ! Tu pourras jouer quand il aura accepté.'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
         ),
       );
-      // Recharger les données au retour
-      if (mounted) _loadData();
+      // Recharger les données pour afficher le défi dans "DÉFIS ENVOYÉS"
+      _loadData();
     }
   }
 
   Future<void> _acceptDuel(Duel duel) async {
     final accepted = await duelService.acceptDuel(duel.id);
     if (accepted && mounted) {
+      // Envoyer notification au challenger que son défi a été accepté
+      await NotificationService.sendDuelAccepted(
+        challengerId: duel.challengerId,
+        accepterName: supabaseService.userName ?? 'Quelqu\'un',
+      );
+
       // Lancer la partie avec le seed du duel
       await Navigator.push(
         context,
@@ -469,6 +666,13 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
 
   Future<void> _declineDuel(Duel duel) async {
     await duelService.declineDuel(duel.id);
+
+    // Envoyer notification au challenger que son défi a été refusé
+    await NotificationService.sendDuelDeclined(
+      challengerId: duel.challengerId,
+      declinerName: supabaseService.userName ?? 'Quelqu\'un',
+    );
+
     _loadData();
   }
 
@@ -815,7 +1019,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
   /// Onglet Duels - affiche tous les duels
   Widget _buildDuelsTab(double screenWidth) {
     final playerId = supabaseService.playerId;
-    final hasAnyDuels = _pendingDuels.isNotEmpty || _activeDuels.isNotEmpty || _myPendingChallenges.isNotEmpty;
+    final hasAnyDuels = _pendingDuels.isNotEmpty || _activeDuels.isNotEmpty || _myPendingChallenges.isNotEmpty || _completedDuels.isNotEmpty;
 
     if (!hasAnyDuels) {
       return _buildEmptyState();
@@ -855,6 +1059,18 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
             duel: duel,
             screenWidth: screenWidth,
             type: 'sent',
+            playerId: playerId!,
+          )),
+          const SizedBox(height: 16),
+        ],
+
+        // Résultats (duels terminés)
+        if (_completedDuels.isNotEmpty) ...[
+          _buildSectionHeader('RÉSULTATS', Colors.purple, Icons.emoji_events),
+          ..._completedDuels.map((duel) => _buildDuelCard(
+            duel: duel,
+            screenWidth: screenWidth,
+            type: 'completed',
             playerId: playerId!,
           )),
         ],
@@ -1324,6 +1540,35 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
             fontWeight: FontWeight.w500,
           ),
         );
+      case 'completed':
+        // Afficher le résultat du duel
+        if (myScore != null && opponentScore != null) {
+          final isWinner = myScore > opponentScore;
+          final isDraw = myScore == opponentScore;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$myScore - $opponentScore',
+                style: TextStyle(
+                  color: isDraw ? Colors.blue[700] : (isWinner ? Colors.green[700] : Colors.red[700]),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isDraw ? '⚖️ Égalité' : (isWinner ? '🏆 Victoire !' : '❌ Défaite'),
+                style: TextStyle(
+                  color: isDraw ? Colors.blue[700] : (isWinner ? Colors.green[700] : Colors.red[700]),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          );
+        }
+        return const SizedBox();
       default:
         return const SizedBox();
     }
@@ -1417,6 +1662,36 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
           onPressed: () => _cancelChallenge(duel),
           tooltip: 'Annuler',
         );
+      case 'completed':
+        // Bouton Revanche pour les duels terminés
+        return GestureDetector(
+          onTap: () => _revengePlayer(duel),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF6B9D), Color(0xFFE91E63)],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE91E63).withOpacity(0.4),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Text(
+              'Revanche',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
       default:
         return const SizedBox();
     }
@@ -1467,6 +1742,29 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin {
       await duelService.declineDuel(duel.id);
       _loadData();
     }
+  }
+
+  /// Lancer une revanche contre l'adversaire d'un duel terminé
+  Future<void> _revengePlayer(Duel duel) async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    // Déterminer l'adversaire
+    final isChallenger = duel.challengerId == playerId;
+    final opponentId = isChallenger ? duel.challengedId : duel.challengerId;
+    final opponentName = isChallenger ? duel.challengedName : duel.challengerName;
+    final opponentPhoto = isChallenger ? duel.challengedPhotoUrl : duel.challengerPhotoUrl;
+
+    // Créer un PlayerSummary pour réutiliser la méthode existante
+    final opponent = PlayerSummary(
+      id: opponentId,
+      username: opponentName ?? 'Joueur',
+      photoUrl: opponentPhoto,
+      isOnline: false,
+      isFriend: false,
+    );
+
+    await _challengePlayer(opponent);
   }
 
   void _showPlayerInfo(String odataId, String name, String? photoUrl) {

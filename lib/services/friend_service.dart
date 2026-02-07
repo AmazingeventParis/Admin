@@ -22,11 +22,11 @@ class PlayerSummary {
     bool isFriend = false,
     bool hasPendingRequest = false,
   }) {
-    // Vérifier si le joueur est en ligne (actif dans les 5 dernières minutes)
+    // Vérifier si le joueur est en ligne (actif dans la dernière minute)
     bool online = false;
     if (json['last_seen_at'] != null) {
       final lastSeen = DateTime.parse(json['last_seen_at']);
-      online = DateTime.now().difference(lastSeen).inMinutes < 5;
+      online = DateTime.now().difference(lastSeen).inSeconds < 60;
     }
 
     return PlayerSummary(
@@ -241,13 +241,13 @@ class FriendService {
   /// Récupère les joueurs en ligne
   Future<List<PlayerSummary>> getOnlinePlayers(String currentPlayerId) async {
     try {
-      final fiveMinutesAgo = DateTime.now().subtract(const Duration(minutes: 5));
+      final oneMinuteAgo = DateTime.now().subtract(const Duration(seconds: 60));
 
       final response = await _client
           .from('players')
           .select('id, username, photo_url, last_seen_at')
           .neq('id', currentPlayerId)
-          .gte('last_seen_at', fiveMinutesAgo.toIso8601String())
+          .gte('last_seen_at', oneMinuteAgo.toIso8601String())
           .order('username')
           .limit(50);
 

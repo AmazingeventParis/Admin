@@ -37,6 +37,46 @@ class NotificationService {
     }
   }
 
+  /// Envoie une notification de défi accepté
+  static Future<void> sendDuelAccepted({
+    required String challengerId,
+    required String accepterName,
+  }) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'send-notification',
+        body: {
+          'type': 'duel_accepted',
+          'target_player_id': challengerId,
+          'title': 'Défi accepté !',
+          'body': '$accepterName a accepté ton défi ! À toi de jouer !',
+        },
+      );
+    } catch (e) {
+      print('Notification non envoyée: $e');
+    }
+  }
+
+  /// Envoie une notification de défi refusé
+  static Future<void> sendDuelDeclined({
+    required String challengerId,
+    required String declinerName,
+  }) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'send-notification',
+        body: {
+          'type': 'duel_declined',
+          'target_player_id': challengerId,
+          'title': 'Défi refusé',
+          'body': '$declinerName a refusé ton défi.',
+        },
+      );
+    } catch (e) {
+      print('Notification non envoyée: $e');
+    }
+  }
+
   /// Envoie une notification de résultat de duel
   static Future<void> sendDuelResult({
     required String playerId,

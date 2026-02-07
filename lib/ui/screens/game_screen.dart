@@ -224,12 +224,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    final playerId = supabaseService.playerId;
+
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      // App en arrière-plan - pause la musique
+      // App en arrière-plan - pause la musique et mettre offline
       audioService.pauseAll();
+      if (playerId != null) {
+        friendService.setOffline(playerId);
+      }
     } else if (state == AppLifecycleState.resumed) {
-      // App revenue au premier plan - reprend la musique
+      // App revenue au premier plan - reprend la musique et mettre online
       audioService.resumeAll();
+      if (playerId != null) {
+        friendService.updateOnlineStatus(playerId);
+      }
     }
   }
 
@@ -2856,45 +2864,85 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Text(
-                'GAME OVER',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 42,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 3,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black54,
-                      offset: Offset(3, 3),
-                      blurRadius: 6,
+              // Titre GAME OVER en style Candy
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Ombre du texte
+                  const CandyText(
+                    text: 'GAME OVER',
+                    fontSize: 42,
+                    textColor: Color(0xFF8B0000),
+                    strokeColor: Color(0xFF5C0000),
+                    strokeWidth: 6,
+                  ),
+                  // Texte principal avec reflet
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white,
+                        Colors.white.withOpacity(0.8),
+                        const Color(0xFFFFE4E1),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ).createShader(bounds),
+                    child: const CandyText(
+                      text: 'GAME OVER',
+                      fontSize: 42,
+                      textColor: Colors.white,
+                      strokeColor: Color(0xFFE91E63),
+                      strokeWidth: 5,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
               if (isNewHighScore) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                // Badge nouveau record avec effet brillant
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFD700), Color(0xFFFFA500), Color(0xFFFFD700)],
                     ),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(25),
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFD700).withOpacity(0.6),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                      const BoxShadow(
+                        color: Color(0xFFB8860B),
+                        offset: Offset(0, 4),
+                        blurRadius: 0,
+                      ),
+                    ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.emoji_events, color: Colors.white, size: 20),
-                      SizedBox(width: 5),
+                      const Icon(Icons.emoji_events, color: Colors.white, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         'NOUVEAU RECORD!',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
-                          letterSpacing: 1,
+                          letterSpacing: 1.5,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.3),
+                              offset: const Offset(1, 2),
+                              blurRadius: 3,
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -2902,38 +2950,109 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                 ),
               ],
               const SizedBox(height: 20),
+              // Score avec effet doré brillant
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 18),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFFFD700),
+                      Color(0xFFFFA500),
+                      Color(0xFFFF8C00),
+                      Color(0xFFFFA500),
+                      Color(0xFFFFD700),
+                    ],
+                    stops: [0.0, 0.25, 0.5, 0.75, 1.0],
                   ),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'SCORE',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white70,
-                        letterSpacing: 2,
-                      ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
+                  boxShadow: [
+                    // Ombre 3D
+                    const BoxShadow(
+                      color: Color(0xFFB8860B),
+                      offset: Offset(0, 6),
+                      blurRadius: 0,
                     ),
-                    Text(
-                      '$_score',
-                      style: const TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black38,
-                            offset: Offset(2, 2),
-                            blurRadius: 4,
+                    // Lueur dorée
+                    BoxShadow(
+                      color: const Color(0xFFFFD700).withOpacity(0.5),
+                      blurRadius: 20,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        // Label SCORE
+                        Text(
+                          'SCORE',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white.withOpacity(0.9),
+                            letterSpacing: 3,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.3),
+                                offset: const Offset(1, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                        const SizedBox(height: 5),
+                        // Score avec effet brillant
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white,
+                              Color(0xFFFFFACD),
+                              Colors.white,
+                            ],
+                          ).createShader(bounds),
+                          child: Text(
+                            '$_score',
+                            style: TextStyle(
+                              fontSize: 52,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 2,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.4),
+                                  offset: const Offset(2, 3),
+                                  blurRadius: 5,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Reflet brillant en haut
+                    Positioned(
+                      top: 0,
+                      left: 15,
+                      right: 15,
+                      child: Container(
+                        height: 12,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white.withOpacity(0.6),
+                              Colors.white.withOpacity(0.0),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -2962,92 +3081,28 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                 ),
               ],
               const SizedBox(height: 30),
-              // Boutons d'action
+              // Boutons d'action avec effet 3D candy
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Bouton Accueil
-                  GestureDetector(
+                  // Bouton Quitter - Style candy 3D violet
+                  _buildCandyButton(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-                        ),
-                        borderRadius: BorderRadius.circular(25),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF667eea).withOpacity(0.5),
-                            blurRadius: 15,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.5),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.close, color: Colors.white, size: 24),
-                          SizedBox(width: 8),
-                          Text(
-                            'QUITTER',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    icon: Icons.home_rounded,
+                    label: 'QUITTER',
+                    gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                    shadowColor: const Color(0xFF6C3483),
                   ),
                   // En mode duel, pas de bouton rejouer
                   if (!_isDuelMode) ...[
                     const SizedBox(width: 15),
-                    // Bouton Rejouer
-                    GestureDetector(
+                    // Bouton Rejouer - Style candy 3D vert
+                    _buildCandyButton(
                       onTap: _restartGame,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF32CD32), Color(0xFF228B22)],
-                          ),
-                          borderRadius: BorderRadius.circular(25),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF32CD32).withOpacity(0.5),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.5),
-                            width: 2,
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.refresh, color: Colors.white, size: 24),
-                            SizedBox(width: 8),
-                            Text(
-                              'REJOUER',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      icon: Icons.replay_rounded,
+                      label: 'REJOUER',
+                      gradientColors: const [Color(0xFF2ECC71), Color(0xFF27AE60)],
+                      shadowColor: const Color(0xFF1E8449),
                     ),
                   ],
                 ],
@@ -3262,6 +3317,114 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
             fontWeight: FontWeight.bold,
             fontSize: 20,
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Bouton style candy 3D pour le game over
+  Widget _buildCandyButton({
+    required VoidCallback onTap,
+    required IconData icon,
+    required String label,
+    required List<Color> gradientColors,
+    required Color shadowColor,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        decoration: BoxDecoration(
+          // Gradient principal
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: gradientColors,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          // Effet 3D avec plusieurs ombres
+          boxShadow: [
+            // Ombre principale (dessous)
+            BoxShadow(
+              color: shadowColor,
+              offset: const Offset(0, 6),
+              blurRadius: 0,
+            ),
+            // Ombre douce
+            BoxShadow(
+              color: shadowColor.withOpacity(0.5),
+              offset: const Offset(0, 8),
+              blurRadius: 10,
+            ),
+            // Lueur colorée
+            BoxShadow(
+              color: gradientColors[0].withOpacity(0.4),
+              blurRadius: 15,
+              spreadRadius: 2,
+            ),
+          ],
+          // Bordure brillante
+          border: Border.all(
+            color: Colors.white.withOpacity(0.4),
+            width: 2,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Contenu principal
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icône avec ombre
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.25),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 10),
+                // Texte avec effet
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 1.5,
+                    shadows: [
+                      Shadow(
+                        color: shadowColor,
+                        offset: const Offset(1, 2),
+                        blurRadius: 3,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            // Reflet brillant en haut
+            Positioned(
+              top: 0,
+              left: 10,
+              right: 10,
+              child: Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withOpacity(0.5),
+                      Colors.white.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
