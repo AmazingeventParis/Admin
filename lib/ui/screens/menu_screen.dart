@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 import '../../services/duel_service.dart';
 import '../../services/friend_service.dart';
+import '../../services/message_service.dart';
 import '../widgets/candy_ui.dart';
 import 'game_screen.dart';
 import 'profile_screen.dart';
 import 'auth_screen.dart';
 import 'leaderboard_screen.dart';
 import 'duel_screen.dart';
+import 'messages_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -21,6 +23,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
   String _userName = 'Joueur';
   String? _googlePhotoUrl;
   int _pendingDuelCount = 0;
+  int _unreadMessageCount = 0;
 
   // Animation pour le bouton JOUER
   late AnimationController _buttonController;
@@ -104,13 +107,15 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
       });
     }
 
-    // Charger le nombre de duels en attente
+    // Charger le nombre de duels en attente et messages non lus
     final playerId = supabaseService.playerId;
     if (playerId != null) {
-      final count = await duelService.getPendingDuelCount(playerId);
+      final duelCount = await duelService.getPendingDuelCount(playerId);
+      final messageCount = await messageService.getTotalUnreadCount(playerId);
       if (mounted) {
         setState(() {
-          _pendingDuelCount = count;
+          _pendingDuelCount = duelCount;
+          _unreadMessageCount = messageCount;
         });
       }
     }
@@ -157,12 +162,9 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
   }
 
   void _openMessages() {
-    // TODO: Implémenter les messages
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Messages - Bientôt disponible'),
-        backgroundColor: Colors.blue,
-      ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const MessagesScreen()),
     );
   }
 
@@ -340,13 +342,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
                 _openLeaderboard,
                 0.25,
               ),
-              // Bouton Messages (animé)
-              _buildAnimatedMenuButton(
-                'assets/ui/boutonmessages.png',
-                buttonSize,
-                _openMessages,
-                0.50,
-              ),
+              // Bouton Messages (animé) avec badge
+              _buildMessagesButtonWithBadge(buttonSize),
               // Bouton Duel (animé) avec badge
               _buildDuelButtonWithBadge(buttonSize),
             ],
@@ -385,6 +382,49 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
   }
 
   // Bouton statique (page courante - pas d'animation)
+  /// Bouton Messages avec badge de notification
+  Widget _buildMessagesButtonWithBadge(double size) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildAnimatedMenuButton(
+          'assets/ui/boutonmessages.png',
+          size,
+          _openMessages,
+          0.50,
+        ),
+        if (_unreadMessageCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                _unreadMessageCount > 9 ? '9+' : '$_unreadMessageCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   /// Bouton Duel avec badge de notification
   Widget _buildDuelButtonWithBadge(double size) {
     return Stack(

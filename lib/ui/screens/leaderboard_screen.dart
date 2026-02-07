@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 import '../../services/duel_service.dart';
+import '../../services/message_service.dart';
 import 'menu_screen.dart';
 import 'duel_screen.dart';
+import 'messages_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -15,6 +17,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   List<Map<String, dynamic>> _leaderboard = [];
   bool _isLoading = true;
   int _pendingDuelCount = 0;
+  int _unreadMessageCount = 0;
 
   // Animation pour les boutons du menu en bas
   late AnimationController _menuButtonController;
@@ -31,10 +34,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   Future<void> _loadPendingDuels() async {
     final playerId = supabaseService.playerId;
     if (playerId != null) {
-      final count = await duelService.getPendingDuelCount(playerId);
+      final duelCount = await duelService.getPendingDuelCount(playerId);
+      final messageCount = await messageService.getTotalUnreadCount(playerId);
       if (mounted) {
         setState(() {
-          _pendingDuelCount = count;
+          _pendingDuelCount = duelCount;
+          _unreadMessageCount = messageCount;
         });
       }
     }
@@ -561,21 +566,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
                 'assets/ui/boutonleader.png',
                 buttonSize,
               ),
-              // Bouton Messages (animé)
-              _buildAnimatedMenuButton(
-                'assets/ui/boutonmessages.png',
-                buttonSize,
-                () {
-                  // TODO: Navigation vers Messages
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Messages - Bientôt disponible'),
-                      backgroundColor: Colors.blue,
-                    ),
-                  );
-                },
-                0.50,
-              ),
+              // Bouton Messages (animé) avec badge
+              _buildMessagesButtonWithBadge(buttonSize),
               // Bouton Duel (animé) avec badge
               _buildDuelButtonWithBadge(buttonSize),
             ],
@@ -615,6 +607,54 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with TickerProvid
   }
 
   // Bouton statique (page courante - pas d'animation)
+  /// Bouton Messages avec badge de notification
+  Widget _buildMessagesButtonWithBadge(double size) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildAnimatedMenuButton(
+          'assets/ui/boutonmessages.png',
+          size,
+          () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MessagesScreen()),
+            );
+          },
+          0.50,
+        ),
+        if (_unreadMessageCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                _unreadMessageCount > 9 ? '9+' : '$_unreadMessageCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   /// Bouton Duel avec badge de notification
   Widget _buildDuelButtonWithBadge(double size) {
     return Stack(

@@ -10,6 +10,9 @@ import '../widgets/candy_ui.dart';
 import 'menu_screen.dart';
 import 'leaderboard_screen.dart';
 import 'game_screen.dart';
+import 'chat_screen.dart';
+import 'messages_screen.dart';
+import '../../services/message_service.dart';
 
 class DuelScreen extends StatefulWidget {
   const DuelScreen({super.key});
@@ -31,6 +34,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
   List<PlayerSummary> _pendingFriendRequests = []; // Demandes d'amis reçues
   bool _isLoading = true;
   String _searchQuery = '';
+  int _unreadMessageCount = 0;
 
   // Controller pour la recherche
   final TextEditingController _searchController = TextEditingController();
@@ -529,6 +533,9 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
 
     // Charger les joueurs selon l'onglet
     await _loadPlayersForTab();
+
+    // Charger le nombre de messages non lus
+    _unreadMessageCount = await messageService.getTotalUnreadCount(playerId);
 
     setState(() => _isLoading = false);
   }
@@ -1795,13 +1802,28 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
     }
   }
 
-  /// Affiche le profil d'un ami avec ses stats et option de suppression
+  /// Ouvre le chat avec un ami
+  void _openChat(PlayerSummary player) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          friendId: player.id,
+          friendName: player.username,
+          friendPhotoUrl: player.photoUrl,
+        ),
+      ),
+    );
+  }
+
+  /// Affiche le profil d'un joueur avec ses stats et options
   void _showFriendProfile(PlayerSummary player) {
     showDialog(
       context: context,
       builder: (context) => _FriendProfileDialog(
         player: player,
-        onRemoveFriend: () async {
+        // Bouton supprimer seulement si c'est un ami
+        onRemoveFriend: player.isFriend ? () async {
           final playerId = supabaseService.playerId;
           if (playerId == null) return;
 
@@ -1851,11 +1873,34 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
               if (success) _loadData(); // Recharger la liste
             }
           }
-        },
+        } : null,
+        // Bouton ajouter seulement si ce n'est PAS un ami
+        onAddFriend: !player.isFriend ? () async {
+          final playerId = supabaseService.playerId;
+          if (playerId == null) return;
+
+          final success = await friendService.sendFriendRequest(playerId, player.id);
+          if (mounted) {
+            Navigator.pop(context); // Fermer le dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success
+                  ? 'Demande d\'ami envoyée à ${player.username} !'
+                  : 'Erreur lors de l\'envoi'),
+                backgroundColor: success ? Colors.green : Colors.red,
+              ),
+            );
+          }
+        } : null,
         onChallenge: () {
           Navigator.pop(context); // Fermer le dialog
           _challengePlayer(player);
         },
+        // Bouton chat seulement si c'est un ami
+        onOpenChat: player.isFriend ? () {
+          Navigator.pop(context); // Fermer le dialog
+          _openChat(player);
+        } : null,
       ),
     );
   }
@@ -1978,28 +2023,31 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
                 Positioned(
                   left: 182,
                   top: 29,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF66BB6A), Color(0xFF43A047)],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white, width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.5),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3),
+                  child: GestureDetector(
+                    onTap: () => _openChat(player),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF66BB6A), Color(0xFF43A047)],
                         ),
-                      ],
-                    ),
-                    child: const Text(
-                      'Messages',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.5),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'Messages',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ),
@@ -2090,20 +2138,8 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
                 },
                 0.25,
               ),
-              // Bouton Messages (animé)
-              _buildAnimatedMenuButton(
-                'assets/ui/boutonmessages.png',
-                buttonSize,
-                () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Messages - Bientôt disponible'),
-                      backgroundColor: Colors.blue,
-                    ),
-                  );
-                },
-                0.50,
-              ),
+              // Bouton Messages (animé) avec badge
+              _buildMessagesButtonWithBadge(buttonSize),
               // Bouton Duel (statique - on est sur cette page)
               _buildStaticMenuButton(
                 'assets/ui/boutonduel.png',
@@ -2113,6 +2149,54 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
           ),
         ],
       ),
+    );
+  }
+
+  /// Bouton Messages avec badge de notification
+  Widget _buildMessagesButtonWithBadge(double size) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildAnimatedMenuButton(
+          'assets/ui/boutonmessages.png',
+          size,
+          () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MessagesScreen()),
+            );
+          },
+          0.50,
+        ),
+        if (_unreadMessageCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                _unreadMessageCount > 9 ? '9+' : '$_unreadMessageCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -2273,16 +2357,20 @@ class _PlayerInfoDialog extends StatelessWidget {
   }
 }
 
-/// Dialog pour afficher le profil complet d'un ami avec stats
+/// Dialog pour afficher le profil complet d'un joueur avec stats
 class _FriendProfileDialog extends StatefulWidget {
   final PlayerSummary player;
-  final VoidCallback onRemoveFriend;
+  final VoidCallback? onRemoveFriend;  // Null si pas ami
   final VoidCallback onChallenge;
+  final VoidCallback? onAddFriend;  // Pour ajouter en ami si pas ami
+  final VoidCallback? onOpenChat;  // Pour ouvrir le chat (si ami)
 
   const _FriendProfileDialog({
     required this.player,
-    required this.onRemoveFriend,
+    this.onRemoveFriend,
     required this.onChallenge,
+    this.onAddFriend,
+    this.onOpenChat,
   });
 
   @override
@@ -2420,87 +2508,166 @@ class _FriendProfileDialogState extends State<_FriendProfileDialog> {
 
             const SizedBox(height: 20),
 
-            // Boutons d'action
-            Row(
-              children: [
-                // Bouton Supprimer
-                Expanded(
-                  child: GestureDetector(
-                    onTap: widget.onRemoveFriend,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFF6B6B), Color(0xFFEE5A5A)],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.red.withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+            // Boutons d'action - rangée 1 (Supprimer/Ajouter + Message)
+            if (widget.player.isFriend)
+              Row(
+                children: [
+                  // Bouton Message (vert)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: widget.onOpenChat,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF66BB6A), Color(0xFF43A047)],
                           ),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.person_remove, color: Colors.white, size: 18),
-                          SizedBox(width: 6),
-                          Text(
-                            'Supprimer',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.4),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.chat, color: Colors.white, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Message',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                // Bouton Défier
-                Expanded(
-                  child: GestureDetector(
-                    onTap: widget.onChallenge,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFF6B9D), Color(0xFFE91E63)],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFE91E63).withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+                  const SizedBox(width: 12),
+                  // Bouton Supprimer (rouge)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: widget.onRemoveFriend,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF6B6B), Color(0xFFEE5A5A)],
                           ),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.sports_esports, color: Colors.white, size: 18),
-                          SizedBox(width: 6),
-                          Text(
-                            'Défier',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withOpacity(0.4),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.person_remove, color: Colors.white, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Supprimer',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+                ],
+              )
+            else if (widget.onAddFriend != null)
+              // Bouton Ajouter (pour non-amis)
+              GestureDetector(
+                onTap: widget.onAddFriend,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF66BB6A), Color(0xFF43A047)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.green.withOpacity(0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.person_add, color: Colors.white, size: 18),
+                      SizedBox(width: 6),
+                      Text(
+                        'Ajouter en ami',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
+
+            const SizedBox(height: 12),
+
+            // Bouton Défier (toujours visible)
+            GestureDetector(
+              onTap: widget.onChallenge,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF6B9D), Color(0xFFE91E63)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFE91E63).withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.sports_esports, color: Colors.white, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'Défier',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
 
             const SizedBox(height: 12),

@@ -1,7 +1,7 @@
 name: block_puzzle
 description: A classic block puzzle game built with Flutter.
 publish_to: 'none'
-version: 1.0.0+19
+version: 1.0.0+20
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,9 +13,9 @@ dependencies:
   audioplayers: ^5.2.1
   supabase_flutter: ^2.3.0
   google_sign_in: ^6.2.1
-  # Firebase temporairement désactivé pour iOS
-  # firebase_core: ^3.8.0
-  # firebase_messaging: ^15.1.5
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+  onesignal_flutter: ^5.1.0
 
 dev_dependencies:
   flutter_test:
@@ -74,4 +74,6 @@ flutter:
     - assets/ui/sugar_gauge_icon.png
     - assets/ui/cadrebloqueenbas.png
     - assets/ui/Cadreonline.png
+    - assets/ui/fondmessage.png
+    - assets/ui/Biscuitmessages.png
     - assets/sounds/

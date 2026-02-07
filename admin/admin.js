@@ -137,6 +137,7 @@ async function loadUsers() {
                     <td>${formatNumber(stats.high_score || 0)}</td>
                     <td>
                         ${isFake ? `<button class="btn btn-play" onclick="openPlayModal('${player.id}', '${player.username}')">🎮 Jouer</button>` : ''}
+                        ${isFake ? `<button class="btn btn-chat" onclick="openChatModal('${player.id}', '${player.username}')">💬 Chat</button>` : ''}
                         <button class="btn btn-edit" onclick="editScore('${player.id}', ${stats.high_score || 0})">✏️ Score</button>
                         <button class="btn btn-delete" onclick="deleteUser('${player.id}')">🗑️ Supprimer</button>
                     </td>
@@ -965,5 +966,381 @@ async function updateBotHighScore(playerId, newScore) {
         }
     } catch (error) {
         console.error('Erreur mise à jour high score:', error);
+    }
+}
+
+// ============================================
+// SIMULATEUR DE CHAT
+// ============================================
+
+let chatBotId = null;
+let chatBotName = null;
+let chatPartnerId = null;
+let chatPartnerName = null;
+let chatPartnerPhoto = null;
+let allPlayers = [];
+let chatSubscription = null;
+
+// Ouvrir la modal de chat
+async function openChatModal(botId, botName) {
+    chatBotId = botId;
+    chatBotName = botName;
+
+    document.getElementById('chatBotName').textContent = botName;
+    document.getElementById('chatModal').style.display = 'flex';
+    document.getElementById('chatModalLoading').style.display = 'block';
+    document.getElementById('chatModalContent').style.display = 'none';
+    document.getElementById('activeChatSection').style.display = 'none';
+
+    await loadChatData();
+}
+
+// Fermer la modal de chat
+function closeChatModal() {
+    document.getElementById('chatModal').style.display = 'none';
+    chatBotId = null;
+    chatBotName = null;
+    chatPartnerId = null;
+
+    // Annuler l'abonnement temps réel
+    if (chatSubscription) {
+        chatSubscription.unsubscribe();
+        chatSubscription = null;
+    }
+}
+
+// Charger les données de chat
+async function loadChatData() {
+    try {
+        // Charger tous les joueurs
+        const { data: players } = await supabaseClient
+            .from('players')
+            .select('id, username, photo_url');
+
+        allPlayers = players || [];
+
+        // Charger les conversations existantes
+        const { data: messages } = await supabaseClient
+            .from('messages')
+            .select('*')
+            .or(`sender_id.eq.${chatBotId},receiver_id.eq.${chatBotId}`)
+            .order('created_at', { ascending: false });
+
+        // Grouper par conversation
+        const conversations = {};
+        messages?.forEach(msg => {
+            const partnerId = msg.sender_id === chatBotId ? msg.receiver_id : msg.sender_id;
+            if (!conversations[partnerId]) {
+                const partner = allPlayers.find(p => p.id === partnerId);
+                conversations[partnerId] = {
+                    partnerId,
+                    partnerName: partner?.username || 'Inconnu',
+                    partnerPhoto: partner?.photo_url,
+                    lastMessage: msg.content,
+                    lastTime: new Date(msg.created_at),
+                    unreadCount: msg.receiver_id === chatBotId && !msg.read_at ? 1 : 0
+                };
+            } else if (msg.receiver_id === chatBotId && !msg.read_at) {
+                conversations[partnerId].unreadCount++;
+            }
+        });
+
+        displayConversations(Object.values(conversations));
+        populateNewChatSelect(players);
+
+        document.getElementById('chatModalLoading').style.display = 'none';
+        document.getElementById('chatModalContent').style.display = 'block';
+
+    } catch (error) {
+        console.error('Erreur chargement chat:', error);
+        showToast('Erreur chargement chat', 'error');
+    }
+}
+
+// Afficher les conversations
+function displayConversations(conversations) {
+    const container = document.getElementById('conversationsContainer');
+
+    if (conversations.length === 0) {
+        container.innerHTML = '<div class="no-duels">Aucune conversation</div>';
+        return;
+    }
+
+    // Trier par date
+    conversations.sort((a, b) => b.lastTime - a.lastTime);
+
+    container.innerHTML = conversations.map(conv => `
+        <div class="duel-card conversation-card" onclick="openConversation('${conv.partnerId}', '${conv.partnerName}', '${conv.partnerPhoto || ''}')">
+            <div class="duel-info">
+                ${conv.partnerPhoto
+                    ? `<img src="${conv.partnerPhoto}" alt="${conv.partnerName}">`
+                    : `<div style="width:45px;height:45px;border-radius:50%;background:linear-gradient(135deg,#ff6b9d,#ffc371);display:flex;align-items:center;justify-content:center;font-weight:bold;">${conv.partnerName?.[0] || '?'}</div>`
+                }
+                <div class="duel-details">
+                    <span class="opponent-name">${conv.partnerName}</span>
+                    <span class="duel-status">${conv.lastMessage.substring(0, 30)}${conv.lastMessage.length > 30 ? '...' : ''}</span>
+                </div>
+            </div>
+            ${conv.unreadCount > 0 ? `<span class="unread-badge">${conv.unreadCount}</span>` : ''}
+        </div>
+    `).join('');
+}
+
+// Peupler le select pour nouvelle conversation
+function populateNewChatSelect(players) {
+    const select = document.getElementById('newChatTarget');
+    select.innerHTML = '<option value="">Sélectionner un joueur...</option>';
+
+    players?.filter(p => p.id !== chatBotId).forEach(player => {
+        const option = document.createElement('option');
+        option.value = JSON.stringify({ id: player.id, name: player.username, photo: player.photo_url });
+        option.textContent = player.username || 'Anonyme';
+        select.appendChild(option);
+    });
+}
+
+// Ouvrir une conversation
+async function openConversation(partnerId, partnerName, partnerPhoto) {
+    chatPartnerId = partnerId;
+    chatPartnerName = partnerName;
+    chatPartnerPhoto = partnerPhoto;
+
+    document.getElementById('chatPartnerName').textContent = partnerName;
+    const photoEl = document.getElementById('chatPartnerPhoto');
+    if (partnerPhoto) {
+        photoEl.src = partnerPhoto;
+        photoEl.style.display = 'block';
+    } else {
+        photoEl.style.display = 'none';
+    }
+
+    document.getElementById('activeChatSection').style.display = 'block';
+
+    // Charger les messages
+    await loadMessages();
+
+    // Écouter les nouveaux messages en temps réel
+    setupChatSubscription();
+
+    // Marquer comme lus
+    await markMessagesAsRead();
+}
+
+// Charger les messages d'une conversation
+async function loadMessages() {
+    try {
+        const { data: messages } = await supabaseClient
+            .from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${chatBotId},receiver_id.eq.${chatPartnerId}),and(sender_id.eq.${chatPartnerId},receiver_id.eq.${chatBotId})`)
+            .order('created_at', { ascending: true });
+
+        displayMessages(messages || []);
+
+    } catch (error) {
+        console.error('Erreur chargement messages:', error);
+    }
+}
+
+// Afficher les messages
+function displayMessages(messages) {
+    const container = document.getElementById('chatMessages');
+
+    container.innerHTML = messages.map(msg => {
+        const isMe = msg.sender_id === chatBotId;
+        const time = new Date(msg.created_at);
+        const timeStr = `${time.getHours().toString().padLeft(2, '0')}:${time.getMinutes().toString().padLeft(2, '0')}`;
+
+        return `
+            <div class="chat-bubble ${isMe ? 'sent' : 'received'}">
+                <div class="bubble-content">${msg.content}</div>
+                <div class="bubble-time">${timeStr}</div>
+            </div>
+        `;
+    }).join('');
+
+    // Scroll en bas
+    container.scrollTop = container.scrollHeight;
+}
+
+// String.padLeft polyfill
+String.prototype.padLeft = function(length, char) {
+    return (char.repeat(length) + this).slice(-length);
+};
+
+// Setup abonnement temps réel
+function setupChatSubscription() {
+    if (chatSubscription) {
+        chatSubscription.unsubscribe();
+    }
+
+    chatSubscription = supabaseClient
+        .channel(`chat_${chatBotId}_${chatPartnerId}`)
+        .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `or(and(sender_id.eq.${chatBotId},receiver_id.eq.${chatPartnerId}),and(sender_id.eq.${chatPartnerId},receiver_id.eq.${chatBotId}))`
+        }, (payload) => {
+            // Nouveau message reçu
+            loadMessages();
+            markMessagesAsRead();
+        })
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'typing_status'
+        }, (payload) => {
+            // Mise à jour du statut de frappe
+            if (payload.new && payload.new.player_id === chatPartnerId && payload.new.is_typing) {
+                document.getElementById('chatPartnerTyping').style.display = 'inline';
+            } else {
+                document.getElementById('chatPartnerTyping').style.display = 'none';
+            }
+        })
+        .subscribe();
+}
+
+// Marquer les messages comme lus
+async function markMessagesAsRead() {
+    try {
+        await supabaseClient
+            .from('messages')
+            .update({ read_at: new Date().toISOString() })
+            .eq('sender_id', chatPartnerId)
+            .eq('receiver_id', chatBotId)
+            .is('read_at', null);
+    } catch (error) {
+        console.error('Erreur marquage lu:', error);
+    }
+}
+
+// Démarrer nouvelle conversation
+function startNewChat() {
+    const select = document.getElementById('newChatTarget');
+    if (!select.value) {
+        showToast('Sélectionnez un joueur', 'error');
+        return;
+    }
+
+    const data = JSON.parse(select.value);
+    openConversation(data.id, data.name, data.photo);
+    select.value = '';
+}
+
+// Timer pour le debounce de la frappe admin
+let adminTypingTimer = null;
+
+// Gérer la touche Entrée dans le chat
+function handleChatKeyPress(event) {
+    if (event.key === 'Enter') {
+        sendChatMessage();
+    }
+}
+
+// Gérer la frappe dans le chat (appelé à chaque caractère tapé)
+function handleChatInput() {
+    if (!chatPartnerId) return;
+
+    // Envoyer le statut "en train d'écrire"
+    setTypingStatus(true);
+
+    // Réinitialiser le timer - arrêter après 2 secondes d'inactivité
+    if (adminTypingTimer) {
+        clearTimeout(adminTypingTimer);
+    }
+    adminTypingTimer = setTimeout(() => {
+        setTypingStatus(false);
+    }, 2000);
+}
+
+// Mettre à jour le statut de frappe dans la base
+async function setTypingStatus(isTyping) {
+    try {
+        await supabaseClient
+            .from('typing_status')
+            .upsert({
+                player_id: chatBotId,
+                target_id: chatPartnerId,
+                is_typing: isTyping,
+                updated_at: new Date().toISOString()
+            });
+    } catch (error) {
+        console.error('Erreur mise à jour typing:', error);
+    }
+}
+
+// Envoyer un message
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const content = input.value.trim();
+
+    if (!content || !chatPartnerId) return;
+
+    try {
+        const { error } = await supabaseClient
+            .from('messages')
+            .insert({
+                sender_id: chatBotId,
+                receiver_id: chatPartnerId,
+                content: content
+            });
+
+        if (error) throw error;
+
+        input.value = '';
+        await loadMessages();
+
+        // Envoyer la notification push au destinataire
+        const sender = allPlayers.find(p => p.id === chatBotId);
+        if (sender) {
+            try {
+                await supabaseClient.functions.invoke('send-onesignal-notification', {
+                    body: {
+                        target_player_id: chatPartnerId,
+                        title: sender.username || 'Nouveau message',
+                        body: content.length > 50 ? content.substring(0, 50) + '...' : content,
+                        data: { type: 'new_message' }
+                    }
+                });
+                console.log('Notification envoyée à', chatPartnerId);
+            } catch (notifError) {
+                console.error('Erreur notification:', notifError);
+            }
+        }
+
+    } catch (error) {
+        console.error('Erreur envoi message:', error);
+        showToast('Erreur envoi message', 'error');
+    }
+}
+
+// Simuler la frappe (pour tester l'indicateur côté app)
+async function simulateTyping() {
+    try {
+        // D'abord, s'assurer que l'entrée existe
+        await supabaseClient
+            .from('typing_status')
+            .upsert({
+                player_id: chatBotId,
+                target_id: chatPartnerId,
+                is_typing: true,
+                updated_at: new Date().toISOString()
+            });
+
+        // Arrêter après 3 secondes
+        setTimeout(async () => {
+            await supabaseClient
+                .from('typing_status')
+                .upsert({
+                    player_id: chatBotId,
+                    target_id: chatPartnerId,
+                    is_typing: false,
+                    updated_at: new Date().toISOString()
+                });
+        }, 3000);
+
+    } catch (error) {
+        console.error('Erreur simulation frappe:', error);
     }
 }

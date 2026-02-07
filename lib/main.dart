@@ -36,11 +36,11 @@ void main() async {
     print('Erreur Supabase init: $e');
   }
 
-  // Initialiser Firebase et les notifications
+  // Initialiser OneSignal pour les notifications push
   try {
     await NotificationService.initialize();
   } catch (e) {
-    print('Erreur Firebase init: $e');
+    print('Erreur OneSignal init: $e');
   }
 
   runApp(const BlockPuzzleApp());

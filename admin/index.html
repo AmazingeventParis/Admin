@@ -176,6 +176,56 @@
             </div>
         </div>
 
+        <!-- Modal Chat Simulator -->
+        <div class="modal-overlay" id="chatModal" style="display: none;">
+            <div class="modal" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h3>💬 Simulateur de Chat - <span id="chatBotName">Bot</span></h3>
+                    <button class="modal-close" onclick="closeChatModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="chatModalLoading" class="loading">
+                        <div class="spinner"></div>
+                        <p>Chargement des conversations...</p>
+                    </div>
+                    <div id="chatModalContent" style="display: none;">
+                        <!-- Liste des conversations -->
+                        <div id="conversationsList">
+                            <h4>📱 Conversations</h4>
+                            <div id="conversationsContainer"></div>
+                        </div>
+
+                        <!-- Zone de chat active -->
+                        <div id="activeChatSection" style="display: none; margin-top: 20px;">
+                            <div class="chat-header">
+                                <img id="chatPartnerPhoto" src="" alt="">
+                                <div>
+                                    <span id="chatPartnerName">-</span>
+                                    <span id="chatPartnerTyping" class="typing-indicator" style="display: none;">écrit...</span>
+                                </div>
+                            </div>
+                            <div id="chatMessages" class="chat-messages"></div>
+                            <div class="chat-input-container">
+                                <input type="text" id="chatInput" placeholder="Écrire un message..." onkeypress="handleChatKeyPress(event)" oninput="handleChatInput()">
+                                <button class="btn btn-generate" onclick="sendChatMessage()">📤 Envoyer</button>
+                            </div>
+                        </div>
+
+                        <!-- Nouvelle conversation -->
+                        <div style="margin-top: 20px;">
+                            <h4>➕ Nouvelle conversation</h4>
+                            <div class="challenge-section">
+                                <select id="newChatTarget">
+                                    <option value="">Sélectionner un joueur...</option>
+                                </select>
+                                <button class="btn btn-generate" onclick="startNewChat()">💬 Démarrer</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal Simuler Partie -->
         <div class="modal-overlay" id="simulateModal" style="display: none;">
             <div class="modal">

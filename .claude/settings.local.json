@@ -41,7 +41,9 @@
       "Bash(convert:*)",
       "Bash(if not exist \"lib\\\\logic\" mkdir \"lib\\\\logic\")",
       "Bash(cmd /c copy:*)",
-      "Bash(if exist iosPodfile.lock del iosPodfile.lock)"
+      "Bash(if exist iosPodfile.lock del iosPodfile.lock)",
+      "Bash(npx supabase:*)",
+      "Bash(supabase functions deploy:*)"
     ]
   }
 }
