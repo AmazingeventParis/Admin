@@ -674,6 +674,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
     setState(() {
       _score += explosionScore;
+
+      // Mettre à jour le best score en temps réel
+      if (_score > _highScore) {
+        _highScore = _score;
+      }
     });
 
     // Réaction en chaîne après un délai
@@ -946,6 +951,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
     setState(() {
       _score += earnedScore;
+
+      // Mettre à jour le best score en temps réel
+      if (_score > _highScore) {
+        _highScore = _score;
+      }
 
       // Effacer les cellules de la grille
       for (final cellKey in _clearingCells) {
@@ -3333,7 +3343,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           // Gradient principal
           gradient: LinearGradient(
@@ -3377,22 +3387,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
               children: [
                 // Icône avec ombre
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.25),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 22),
+                  child: Icon(icon, color: Colors.white, size: 18),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 // Texte avec effet
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
-                    letterSpacing: 1.5,
+                    letterSpacing: 1.2,
                     shadows: [
                       Shadow(
                         color: shadowColor,
