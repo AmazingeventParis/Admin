@@ -853,9 +853,183 @@ CREATE TABLE friends (
 
 ---
 
+---
+
+## Date: 7 Février 2026 (Suite)
+
+---
+
+## Session du 7 Février 2026 - Notifications Push OneSignal
+
+### 1. Configuration OneSignal
+
+#### Pourquoi OneSignal ?
+- Plus simple que Firebase Cloud Messaging + Supabase Edge Functions
+- Interface web pour configurer iOS et Android
+- SDK Flutter officiel (`onesignal_flutter`)
+
+#### Identifiants OneSignal
+```
+App ID: 01e66a57-6563-4572-b396-ad338b648ddf
+REST API Key: os_v2_app_ahtguv3fmncxfm4wvuzywzen34cc2kxpxnsezp55pu5efdzorqujkxrvasncfgnjgjs62pt2pibtjihkuypdt7new5v6jaa3zuzosja
+```
+
+### 2. Configuration iOS (APNs)
+
+#### Clé APNs créée dans Apple Developer
+- **Nom** : CandyPuzzlePush
+- **Key ID** : 999274RLFU
+- **Team ID** : Z8MD4FCA29
+- **Bundle ID** : com.amazingevent.candypuzzle
+
+#### Fichiers iOS modifiés
+```
+ios/Runner/Runner.entitlements → aps-environment = production
+ios/Runner/Info.plist → UIBackgroundModes (fetch, remote-notification)
+ios/Runner/Info.plist → FirebaseAppDelegateProxyEnabled = false
+```
+
+### 3. Configuration Android
+
+#### Icône de notification personnalisée
+- Fichier : `ic_stat_onesignal_default.png`
+- Format : Blanc sur fond transparent (règle Android)
+- Emplacements :
+  - `android/app/src/main/res/drawable-mdpi/` (24x24)
+  - `android/app/src/main/res/drawable-hdpi/` (36x36)
+  - `android/app/src/main/res/drawable-xhdpi/` (48x48)
+  - `android/app/src/main/res/drawable-xxhdpi/` (72x72)
+  - `android/app/src/main/res/drawable-xxxhdpi/` (96x96)
+
+### 4. Service de Notifications (Flutter)
+
+#### Fichier : `lib/services/notification_service.dart`
+```dart
+class NotificationService {
+  static const String _oneSignalAppId = '01e66a57-6563-4572-b396-ad338b648ddf';
+
+  static Future<void> initialize() async {
+    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+    OneSignal.initialize(_oneSignalAppId);
+    OneSignal.Notifications.requestPermission(true);
+  }
+
+  static Future<void> updateTokenAfterLogin() async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+    await OneSignal.login(playerId);
+    await OneSignal.User.addTags({'player_id': playerId});
+  }
+
+  static Future<void> sendNewMessage({...}) async {
+    await _sendNotification(
+      targetPlayerId: targetPlayerId,
+      title: senderName,
+      body: preview,
+      data: {'type': 'new_message'},
+    );
+  }
+}
+```
+
+### 5. Edge Function Supabase
+
+#### Fichier : `supabase/functions/send-onesignal-notification/index.ts`
+- Reçoit les paramètres : target_player_id, title, body, image_url, data
+- Appelle l'API REST OneSignal pour envoyer la notification
+- Secret requis : `ONESIGNAL_REST_API_KEY` (dans Supabase Dashboard → Edge Functions → Secrets)
+
+### 6. Admin Panel - Envoi de notifications
+
+#### Modification : `admin/admin.js`
+- Fonction `sendChatMessage()` appelle maintenant l'Edge Function
+- Envoi automatique de notification push quand un message est envoyé depuis l'admin
+
+```javascript
+// Après insertion du message
+await supabaseClient.functions.invoke('send-onesignal-notification', {
+  body: {
+    target_player_id: chatPartnerId,
+    title: sender.username || 'Nouveau message',
+    body: content.length > 50 ? content.substring(0, 50) + '...' : content,
+    data: { type: 'new_message' }
+  }
+});
+```
+
+### 7. TestFlight - Tests Externes
+
+#### Problème rencontré
+- Les testeurs externes ne recevaient pas d'invitation
+- Cause : Le build n'était pas assigné au groupe externe
+
+#### Solution
+1. App Store Connect → TestFlight → Builds iOS
+2. Cliquer sur le build (ex: 1.0.0 build 20)
+3. Section "Groupes" → Cliquer sur "+"
+4. Ajouter le groupe externe "Candy"
+5. Les testeurs externes doivent attendre l'approbation Apple (Beta App Review)
+
+#### Types de testeurs
+- **Internes** : Membres de l'équipe App Store Connect (pas d'approbation requise)
+- **Externes** : N'importe quelle adresse email (approbation Apple requise)
+
+### 8. Dépendances ajoutées
+
+```yaml
+# pubspec.yaml
+dependencies:
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+  onesignal_flutter: ^5.1.0
+```
+
+---
+
+## Fichiers Modifiés/Créés (7 Février - Notifications)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/services/notification_service.dart` | Réécrit pour OneSignal |
+| `lib/services/message_service.dart` | Appel NotificationService.sendNewMessage |
+| `lib/main.dart` | Initialisation OneSignal |
+| `admin/admin.js` | Envoi notifications depuis admin |
+| `ios/Runner/Runner.entitlements` | aps-environment = production |
+| `ios/Runner/Info.plist` | Background Modes + FirebaseAppDelegateProxyEnabled |
+| `android/app/src/main/res/drawable-*/ic_stat_onesignal_default.png` | Icône notification |
+| `supabase/functions/send-onesignal-notification/index.ts` | Edge Function |
+| `supabase/config.toml` | Configuration Edge Function |
+| `pubspec.yaml` | Version 1.0.0+20, dépendances OneSignal |
+
+---
+
+## Checklist iOS Notifications Push
+
+| Élément | Status |
+|---------|--------|
+| Clé APNs (.p8) créée dans Apple Developer | ✅ |
+| Clé APNs configurée dans OneSignal | ✅ |
+| Push Notifications activé dans App ID | ✅ |
+| Runner.entitlements → aps-environment = production | ✅ |
+| Info.plist → UIBackgroundModes | ✅ |
+| Info.plist → FirebaseAppDelegateProxyEnabled = false | ✅ |
+| CODE_SIGN_ENTITLEMENTS dans project.pbxproj | ✅ |
+
+---
+
+## Checklist Android Notifications Push
+
+| Élément | Status |
+|---------|--------|
+| Firebase configuré dans OneSignal | ✅ |
+| ic_stat_onesignal_default.png (blanc/transparent) | ✅ |
+| onesignal_flutter dans pubspec.yaml | ✅ |
+
+---
+
 ## Prochaines Étapes
 
-1. **Coins arrondis notifications** - Créer Overlay personnalisé si souhaité
-2. **Bouton Messages fonctionnel** - Page de chat entre amis
-3. **Notifications push** - Firebase Cloud Messaging
-4. **Résultat duel VS** - Écran comparatif après duel
+1. ~~**Notifications push**~~ - FAIT - OneSignal configuré
+2. **Tester les notifications** - Envoyer un message et vérifier réception
+3. **Résultat duel VS** - Écran comparatif après duel
+4. **Page Paramètres** - Son, musique, vibrations, langue
