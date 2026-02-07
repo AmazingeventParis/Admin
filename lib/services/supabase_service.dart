@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'stats_service.dart';
+import 'notification_service.dart';
 
 class SupabaseService {
   static const String _supabaseUrl = 'https://icujwpwicsmyuyidubqf.supabase.co';
@@ -90,6 +91,8 @@ class SupabaseService {
       if (_currentUser != null) {
         // Créer ou mettre à jour le joueur dans la base
         await _createOrUpdatePlayerFromAuth();
+        // Sauvegarder le token FCM maintenant que playerId est défini
+        await NotificationService.updateTokenAfterLogin();
         // Charger les stats du cloud pour ce compte (remplace les stats locales)
         await statsService.init();
         await statsService.loadFromCloudForNewUser();
@@ -123,6 +126,8 @@ class SupabaseService {
     _currentUser = client.auth.currentUser;
     if (_currentUser != null) {
       await _createOrUpdatePlayerFromAuth();
+      // Sauvegarder le token FCM maintenant que playerId est défini
+      await NotificationService.updateTokenAfterLogin();
       // Charger les stats du cloud pour ce compte
       await statsService.init();
       await statsService.loadFromCloudForNewUser();
@@ -206,6 +211,7 @@ class SupabaseService {
     // Si connecté avec Google, utiliser ce compte
     if (_currentUser != null) {
       await _createOrUpdatePlayerFromAuth();
+      await NotificationService.updateTokenAfterLogin();
       return _playerId;
     }
 
@@ -227,6 +233,8 @@ class SupabaseService {
             .update({'username': username, 'updated_at': DateTime.now().toIso8601String()})
             .eq('id', _playerId!);
 
+        // Sauvegarder le token FCM
+        await NotificationService.updateTokenAfterLogin();
         return _playerId;
       }
 
@@ -245,6 +253,8 @@ class SupabaseService {
         'player_id': _playerId,
       });
 
+      // Sauvegarder le token FCM
+      await NotificationService.updateTokenAfterLogin();
       return _playerId;
     } catch (e) {
       print('Erreur getOrCreatePlayer: $e');

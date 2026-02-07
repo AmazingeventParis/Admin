@@ -72,6 +72,7 @@ class DuelService {
     required String duelId,
     required String playerId,
     required int score,
+    int? timeInSeconds,
   }) async {
     try {
       // Récupérer le duel actuel
@@ -80,11 +81,17 @@ class DuelService {
 
       Map<String, dynamic> updates = {};
 
-      // Mettre à jour le bon score
+      // Mettre à jour le bon score et temps
       if (duel.challengerId == playerId) {
         updates['challenger_score'] = score;
+        if (timeInSeconds != null) {
+          updates['challenger_time'] = timeInSeconds;
+        }
       } else if (duel.challengedId == playerId) {
         updates['challenged_score'] = score;
+        if (timeInSeconds != null) {
+          updates['challenged_time'] = timeInSeconds;
+        }
       } else {
         return null; // Le joueur n'est pas dans ce duel
       }
@@ -237,6 +244,27 @@ class DuelService {
       return _parseDuelsWithPlayers(response);
     } catch (e) {
       print('Erreur récupération duels actifs: $e');
+      return [];
+    }
+  }
+
+  /// Récupère les défis que j'ai envoyés (en attente de réponse)
+  Future<List<Duel>> getMySentChallenges(String playerId) async {
+    try {
+      final response = await _client
+          .from('duels')
+          .select('''
+            *,
+            challenger:players!duels_challenger_id_fkey(id, username, photo_url),
+            challenged:players!duels_challenged_id_fkey(id, username, photo_url)
+          ''')
+          .eq('challenger_id', playerId)
+          .eq('status', 'pending')
+          .order('created_at', ascending: false);
+
+      return _parseDuelsWithPlayers(response);
+    } catch (e) {
+      print('Erreur récupération défis envoyés: $e');
       return [];
     }
   }

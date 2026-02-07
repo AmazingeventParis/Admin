@@ -39,7 +39,8 @@
       "Bash(git rm:*)",
       "Bash(py --version)",
       "Bash(convert:*)",
-      "Bash(if not exist \"lib\\\\logic\" mkdir \"lib\\\\logic\")"
+      "Bash(if not exist \"lib\\\\logic\" mkdir \"lib\\\\logic\")",
+      "Bash(cmd /c copy:*)"
     ]
   }
 }

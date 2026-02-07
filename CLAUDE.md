@@ -716,3 +716,146 @@ assets:
 6. **Notifications push** - Alertes et rappels
 7. **Nouveaux modes de jeu** - Défis, tournois, etc.
 8. **Power-ups** - Bonus spéciaux dans le jeu
+
+---
+
+## Date: 7 Février 2026
+
+---
+
+## Session du 7 Février 2026 - Module Duel & Système d'Amis
+
+### 1. Système de Duel - Améliorations UI
+
+#### Page Duel (duel_screen.dart)
+- **Onglets** : Duels, Amis, En Ligne, Tous
+- **Barre de recherche** : Texte brun foncé (#5D3A1A) pour meilleure lisibilité
+- **Cartes joueurs** : Utilisation de `Stack` avec `Positioned` pour positionnement précis des éléments
+
+#### Éditeurs de Layout HTML
+- `layout_editor.html` - Éditeur pour carte joueur standard
+- `layout_editor_amis.html` - Éditeur pour carte ami (avec bouton Messages)
+- Fonctionnalités : Drag & drop souris + déplacement clavier (flèches 1px, Shift+flèches 5px)
+
+### 2. Positionnement des Cartes Joueurs
+
+#### Carte Standard (Onglets En Ligne / Tous)
+```dart
+// Positions finales
+Photo: left=20, top=22 (46x46px)
+Nom: left=70, top=33
+Pastille: left=208, top=37 (16x16px)
+Bouton DÉFIER: left=249, top=26
+```
+
+#### Carte Ami (Onglet Amis)
+```dart
+// Positions finales
+Photo: left=20, top=22 (46x46px)
+Nom: left=70, top=33
+Pastille: left=160, top=37 (16x16px)
+Bouton Messages: left=182, top=29 (vert, non cliquable)
+Bouton DÉFIER: left=266, top=29
+```
+
+### 3. Pastille En Ligne / Hors Ligne
+- **Vert** : Joueur en ligne (actif < 5 minutes)
+- **Rouge** : Joueur hors ligne
+- Badge "Ami" supprimé (redondant dans l'onglet Amis)
+
+### 4. Boutons Accepter/Refuser
+- Remplacement des icônes ✓/✕ par des boutons texte
+- **Bouton Refuser** : Dégradé rouge (#FF6B6B → #EE5A5A)
+- **Bouton Accepter** : Dégradé vert (#66BB6A → #43A047)
+- Style candy avec bordure blanche et ombre
+
+### 5. Badge Notification Défis
+- Déplacé de l'onglet "Duels" vers le header "DÉFIS REÇUS"
+- Plus grand et centré à droite du titre
+- Affiche le nombre de défis en attente
+
+### 6. Système de Notifications en Temps Réel
+
+#### Rafraîchissement Automatique
+- Timer toutes les 5 secondes pour vérifier nouveaux duels/demandes d'amis
+- Fonctionne sur toutes les pages (Duel, Jeu)
+
+#### Notifications MaterialBanner (en haut)
+- **Style** : Marges 16px horizontal, padding 10px vertical, elevation 6
+- **Défi reçu** : Fond rose (#E91E63), icône manette
+- **Demande d'ami** : Fond orange, icône person_add
+- **Auto-fermeture** : 5 secondes
+- **Conditions** : Ne s'affiche pas si déjà sur l'onglet correspondant
+
+#### Pendant le Jeu
+- Notification non cliquable (bouton "OK" seulement)
+- Ne sort pas du jeu en cours
+- Même style élégant
+
+### 7. Exclusion des Amis de l'Onglet "Tous"
+- `getAllPlayers()` filtre maintenant les amis existants
+- Évite les doublons entre onglets
+
+### 8. Recherche Instantanée
+- Correction : recherche déclenche pour l'onglet index 3 (Tous) au lieu de 2
+- Recherche en temps réel sans bouton
+
+### 9. Icône de l'Application
+- Nouvelle icône "Sugar Rush" : `app_icon.png`
+- Fond adaptatif : `#1a0a2e` (violet foncé)
+
+---
+
+## Fichiers Modifiés (7 Février)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/ui/screens/duel_screen.dart` | Refonte complète UI, Stack/Positioned, notifications, temps réel |
+| `lib/ui/screens/game_screen.dart` | Notifications pendant le jeu |
+| `lib/services/friend_service.dart` | `acceptFriendRequestByPlayerId`, `declineFriendRequestByPlayerId`, exclusion amis |
+| `admin/admin.js` | Gestion demandes d'amis pour faux profils |
+| `admin/index.html` | Section demandes d'amis |
+| `pubspec.yaml` | Asset Cadreonline.png, nouvelle icône app |
+| `layout_editor.html` | Éditeur layout carte standard |
+| `layout_editor_amis.html` | Éditeur layout carte ami |
+
+---
+
+## Tables Supabase (Rappel)
+
+### Table `duels`
+```sql
+CREATE TABLE duels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  challenger_id UUID REFERENCES players(id),
+  challenged_id UUID REFERENCES players(id),
+  seed INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending',
+  challenger_score INTEGER,
+  challenged_score INTEGER,
+  winner_id UUID REFERENCES players(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '24 hours')
+);
+```
+
+### Table `friends`
+```sql
+CREATE TABLE friends (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  player_id UUID REFERENCES players(id),
+  friend_id UUID REFERENCES players(id),
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(player_id, friend_id)
+);
+```
+
+---
+
+## Prochaines Étapes
+
+1. **Coins arrondis notifications** - Créer Overlay personnalisé si souhaité
+2. **Bouton Messages fonctionnel** - Page de chat entre amis
+3. **Notifications push** - Firebase Cloud Messaging
+4. **Résultat duel VS** - Écran comparatif après duel

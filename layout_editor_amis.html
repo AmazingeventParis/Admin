@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editeur de Layout - Carte Joueur</title>
+    <title>Editeur de Layout - Carte Ami</title>
     <style>
         * {
             margin: 0;
@@ -110,15 +110,6 @@
             padding: 2px 5px;
             border-radius: 4px;
         }
-        .ami-badge {
-            background: rgba(0,128,0,0.2);
-            border: 1px solid green;
-            border-radius: 8px;
-            padding: 2px 6px;
-            color: green;
-            font-size: 10px;
-            font-weight: bold;
-        }
         .pastille {
             width: 16px;
             height: 16px;
@@ -131,13 +122,23 @@
             background: green;
             box-shadow: 0 0 6px rgba(0,128,0,0.6);
         }
+        .messages-btn {
+            background: linear-gradient(135deg, #66BB6A, #43A047);
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 6px 10px;
+            border-radius: 14px;
+            border: 2px solid white;
+            box-shadow: 0 3px 6px rgba(67,160,71,0.5);
+        }
         .defier-btn {
             background: linear-gradient(135deg, #FF6B9D, #E91E63);
             color: white;
             font-weight: bold;
-            font-size: 12px;
-            padding: 8px 14px;
-            border-radius: 18px;
+            font-size: 10px;
+            padding: 6px 10px;
+            border-radius: 14px;
             border: 2px solid white;
             box-shadow: 0 3px 6px rgba(233,30,99,0.5);
         }
@@ -209,7 +210,7 @@
     </style>
 </head>
 <body>
-    <h1>Editeur de Layout - Carte Joueur</h1>
+    <h1>Editeur de Layout - Carte Ami</h1>
 
     <div class="instructions">
         <strong>Instructions:</strong> Clique sur un element pour le selectionner, puis deplace-le avec la souris ou les fleches du clavier.<br>
@@ -226,38 +227,38 @@
         <div class="card-inner"></div>
         <div class="card-bg"></div>
 
-        <div class="draggable photo" id="photo" style="left: 14px; top: 18px;">H</div>
+        <div class="draggable photo" id="photo" style="left: 20px; top: 22px;">M</div>
 
-        <div class="draggable name" id="name" style="left: 70px; top: 22px;">Heloise</div>
+        <div class="draggable name" id="name" style="left: 70px; top: 37px;">Marie</div>
 
-        <div class="draggable ami-badge" id="ami" style="left: 70px; top: 46px;">Ami</div>
+        <div class="draggable pastille online" id="pastille" style="left: 160px; top: 37px;"></div>
 
-        <div class="draggable pastille" id="pastille" style="left: 260px; top: 35px;"></div>
+        <div class="draggable messages-btn" id="messages" style="left: 185px; top: 29px;">Messages</div>
 
-        <div class="draggable defier-btn" id="defier" style="left: 295px; top: 25px;">DEFIER</div>
+        <div class="draggable defier-btn" id="defier" style="left: 280px; top: 29px;">DÉFIER</div>
     </div>
 
     <div class="coords-panel">
         <h3>Coordonnees des elements (en pixels)</h3>
         <div class="coord-row">
             <span class="coord-label">Photo (46x46):</span>
-            <span class="coord-value" id="photo-coords">left: 14, top: 18</span>
+            <span class="coord-value" id="photo-coords">left: 20, top: 22</span>
         </div>
         <div class="coord-row">
             <span class="coord-label">Nom:</span>
-            <span class="coord-value" id="name-coords">left: 70, top: 22</span>
-        </div>
-        <div class="coord-row">
-            <span class="coord-label">Badge Ami:</span>
-            <span class="coord-value" id="ami-coords">left: 70, top: 46</span>
+            <span class="coord-value" id="name-coords">left: 70, top: 37</span>
         </div>
         <div class="coord-row">
             <span class="coord-label">Pastille (16x16):</span>
-            <span class="coord-value" id="pastille-coords">left: 260, top: 35</span>
+            <span class="coord-value" id="pastille-coords">left: 160, top: 37</span>
+        </div>
+        <div class="coord-row">
+            <span class="coord-label">Bouton Messages:</span>
+            <span class="coord-value" id="messages-coords">left: 185, top: 29</span>
         </div>
         <div class="coord-row">
             <span class="coord-label">Bouton DEFIER:</span>
-            <span class="coord-value" id="defier-coords">left: 295, top: 25</span>
+            <span class="coord-value" id="defier-coords">left: 280, top: 29</span>
         </div>
         <button class="copy-btn" onclick="copyCoords()">Copier les coordonnees</button>
         <button class="reset-btn" onclick="resetPositions()">Reinitialiser</button>
@@ -265,14 +266,14 @@
 
     <script>
         let selectedElement = null;
-        let isOnline = false;
+        let isOnline = true;
 
         const defaultPositions = {
-            photo: { left: 14, top: 18 },
-            name: { left: 70, top: 22 },
-            ami: { left: 70, top: 46 },
-            pastille: { left: 260, top: 35 },
-            defier: { left: 295, top: 25 }
+            photo: { left: 20, top: 22 },
+            name: { left: 70, top: 37 },
+            pastille: { left: 160, top: 37 },
+            messages: { left: 185, top: 29 },
+            defier: { left: 280, top: 29 }
         };
 
         // Selection d'element
@@ -357,7 +358,7 @@
         });
 
         function updateCoords() {
-            const elements = ['photo', 'name', 'ami', 'pastille', 'defier'];
+            const elements = ['photo', 'name', 'pastille', 'messages', 'defier'];
             elements.forEach(id => {
                 const el = document.getElementById(id);
                 const left = parseInt(el.style.left) || 0;
@@ -377,7 +378,7 @@
         }
 
         function copyCoords() {
-            const elements = ['photo', 'name', 'ami', 'pastille', 'defier'];
+            const elements = ['photo', 'name', 'pastille', 'messages', 'defier'];
             let text = 'Coordonnees des elements:\n';
             elements.forEach(id => {
                 const el = document.getElementById(id);

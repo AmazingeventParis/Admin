@@ -16,6 +16,8 @@ class Duel {
   final DuelStatus status;
   final int? challengerScore;
   final int? challengedScore;
+  final int? challengerTime;  // Temps en secondes
+  final int? challengedTime;  // Temps en secondes
   final String? winnerId;
   final DateTime createdAt;
   final DateTime expiresAt;
@@ -34,6 +36,8 @@ class Duel {
     required this.status,
     this.challengerScore,
     this.challengedScore,
+    this.challengerTime,
+    this.challengedTime,
     this.winnerId,
     required this.createdAt,
     required this.expiresAt,
@@ -52,6 +56,8 @@ class Duel {
       status: _parseStatus(json['status']),
       challengerScore: json['challenger_score'],
       challengedScore: json['challenged_score'],
+      challengerTime: json['challenger_time'],
+      challengedTime: json['challenged_time'],
       winnerId: json['winner_id'],
       createdAt: DateTime.parse(json['created_at']),
       expiresAt: json['expires_at'] != null

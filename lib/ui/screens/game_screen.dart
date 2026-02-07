@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as Math;
 import 'dart:math' show Point;
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import '../../services/supabase_service.dart';
 import '../../services/audio_service.dart';
 import '../../services/screen_shake_service.dart';
 import '../../services/duel_service.dart';
+import '../../services/friend_service.dart';
+import '../../services/notification_service.dart';
 import '../../logic/seeded_piece_generator.dart';
 import '../widgets/cell_widget.dart';
 import '../widgets/piece_widget.dart';
@@ -24,11 +27,17 @@ import 'profile_screen.dart';
 class GameScreen extends StatefulWidget {
   final int? duelSeed;  // Si fourni, active le mode duel
   final String? duelId; // ID du duel pour soumettre le score
+  final String? opponentId;  // ID de l'adversaire
+  final String? opponentName;  // Nom de l'adversaire
+  final String? opponentPhotoUrl;  // Photo de l'adversaire
 
   const GameScreen({
     super.key,
     this.duelSeed,
     this.duelId,
+    this.opponentId,
+    this.opponentName,
+    this.opponentPhotoUrl,
   });
 
   @override
@@ -45,11 +54,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   bool _isDuelMode = false;
   SeededPieceGenerator? _pieceGenerator;
   String? _duelId;
+  String? _duelOpponentId;
+  String? _duelOpponentName;
+  String? _duelOpponentPhotoUrl;
 
   // Résultat du duel (après soumission du score)
   int? _opponentScore;
   String? _opponentName;
   String? _opponentPhotoUrl;
+  int? _opponentTime;  // Temps de l'adversaire en secondes
+  int? _myTime;        // Mon temps en secondes
   bool? _isDuelWinner; // true = gagné, false = perdu, null = égalité ou pas encore joué
 
   // Profil utilisateur
@@ -150,15 +164,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   int _energyParticleIdCounter = 0;
   final GlobalKey _sugarGaugeKey = GlobalKey();
 
+  // Timer pour les notifications de duels (même en jeu)
+  Timer? _duelNotificationTimer;
+  int _lastPendingDuelsCount = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // Démarrer le timer de vérification des nouveaux duels (toutes les 5 secondes)
+    _startDuelNotificationTimer();
+
     // Initialiser le mode duel si un seed est fourni
     if (widget.duelSeed != null) {
       _isDuelMode = true;
       _duelId = widget.duelId;
+      _duelOpponentId = widget.opponentId;
+      _duelOpponentName = widget.opponentName;
+      _duelOpponentPhotoUrl = widget.opponentPhotoUrl;
       _pieceGenerator = SeededPieceGenerator(widget.duelSeed!);
     }
 
@@ -965,8 +989,87 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     });
   }
 
+  void _startDuelNotificationTimer() {
+    _duelNotificationTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      if (!mounted) return;
+
+      final playerId = supabaseService.playerId;
+      if (playerId == null) return;
+
+      // Vérifier les nouveaux duels
+      final pendingDuels = await duelService.getPendingDuels(playerId);
+
+      if (pendingDuels.length > _lastPendingDuelsCount && _lastPendingDuelsCount > 0) {
+        // Nouveau défi reçu - afficher notification non cliquable
+        final newDuel = pendingDuels.first;
+        _showGameDuelNotification(newDuel.challengerName ?? 'Quelqu\'un');
+      }
+
+      _lastPendingDuelsCount = pendingDuels.length;
+    });
+
+    // Initialiser le compteur
+    _initPendingDuelsCount();
+  }
+
+  Future<void> _initPendingDuelsCount() async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    final pendingDuels = await duelService.getPendingDuels(playerId);
+    _lastPendingDuelsCount = pendingDuels.length;
+  }
+
+  void _showGameDuelNotification(String challengerName) {
+    if (!mounted) return;
+
+    // Notification élégante non cliquable en haut de l'écran
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        elevation: 6,
+        leading: const Icon(Icons.sports_esports, color: Colors.white, size: 22),
+        backgroundColor: const Color(0xFFE91E63),
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+        content: Text(
+          '⚔️ $challengerName vous défie !',
+        ),
+        actions: [
+          // Pas de bouton VOIR pour ne pas interrompre le jeu
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Auto-fermer après 5 secondes
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    // Annuler le timer de notifications
+    _duelNotificationTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _placeAnimController?.dispose();
     _clearAnimController?.dispose();
@@ -1359,38 +1462,149 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
                 return Stack(
                   children: [
-                    // Score Gauche
-                    Positioned(
-                      left: scoreLeftX,
-                      top: scoreY,
-                      child: CandyScorePanel(
-                        label: 'SCORE',
-                        value: _score,
-                        backgroundImage: 'assets/ui/cerclesscore.png',
-                        labelStrokeColor: const Color(0xFFE91E63),
-                        valueColor: const Color(0xFFFFD700),
-                        valueStrokeColor: const Color(0xFFB8860B),
-                        width: scoreWidth,
-                        height: scoreHeight,
+                    // Mode Duel : Bandeau adversaire + score
+                    if (_isDuelMode) ...[
+                      // Bandeau compact avec adversaire et score
+                      Positioned(
+                        left: screenWidth * 0.02,
+                        right: screenWidth * 0.02,
+                        top: screenHeight * 0.005,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFFE91E63).withOpacity(0.9),
+                                const Color(0xFF9C27B0).withOpacity(0.9),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFE91E63).withOpacity(0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              // Photo adversaire (cliquable)
+                              GestureDetector(
+                                onTap: () => _showOpponentInfo(),
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: ClipOval(
+                                    child: _duelOpponentPhotoUrl != null
+                                        ? Image.network(
+                                            _duelOpponentPhotoUrl!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => _buildMiniAvatar(_duelOpponentName),
+                                          )
+                                        : _buildMiniAvatar(_duelOpponentName),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Nom adversaire
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'DÉFI VS',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      _duelOpponentName ?? 'Adversaire',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Score
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'SCORE',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_score',
+                                      style: const TextStyle(
+                                        color: Color(0xFFFFD700),
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      // Mode Normal : Score Gauche
+                      Positioned(
+                        left: scoreLeftX,
+                        top: scoreY,
+                        child: CandyScorePanel(
+                          label: 'SCORE',
+                          value: _score,
+                          backgroundImage: 'assets/ui/cerclesscore.png',
+                          labelStrokeColor: const Color(0xFFE91E63),
+                          valueColor: const Color(0xFFFFD700),
+                          valueStrokeColor: const Color(0xFFB8860B),
+                          width: scoreWidth,
+                          height: scoreHeight,
+                        ),
+                      ),
 
-                    // Score Droit (Best)
-                    Positioned(
-                      left: scoreRightX,
-                      top: scoreY,
-                      child: CandyScorePanel(
-                        label: 'BEST',
-                        value: _highScore,
-                        backgroundImage: 'assets/ui/cerclemeilleurscrore.png',
-                        labelStrokeColor: const Color(0xFF7B1FA2),
-                        valueColor: const Color(0xFFFFD700),
-                        valueStrokeColor: const Color(0xFFB8860B),
-                        icon: Icons.emoji_events,
-                        width: scoreWidth,
-                        height: scoreHeight,
+                      // Mode Normal : Score Droit (Best)
+                      Positioned(
+                        left: scoreRightX,
+                        top: scoreY,
+                        child: CandyScorePanel(
+                          label: 'BEST',
+                          value: _highScore,
+                          backgroundImage: 'assets/ui/cerclemeilleurscrore.png',
+                          labelStrokeColor: const Color(0xFF7B1FA2),
+                          valueColor: const Color(0xFFFFD700),
+                          valueStrokeColor: const Color(0xFFB8860B),
+                          icon: Icons.emoji_events,
+                          width: scoreWidth,
+                          height: scoreHeight,
+                        ),
                       ),
-                    ),
+                    ],
 
                     // Jauge Sugar Rush
                     Positioned(
@@ -1732,6 +1946,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
         ? blockByWidth.clamp(14.0, 22.0)
         : blockByHeight.clamp(14.0, 22.0);
 
+    // Zone tactile agrandie pour faciliter la prise des pièces
+    final touchAreaSize = slotWidth * 0.95;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
@@ -1753,8 +1970,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       onPanCancel: () {
         _clearPreview();
       },
-      child: Padding(
-        padding: const EdgeInsets.all(8),
+      child: Container(
+        width: touchAreaSize,
+        height: touchAreaSize,
+        alignment: Alignment.center,
         child: Opacity(
           opacity: _draggingIndex == index ? 0.3 : 1.0,
           child: PieceWidget(piece: piece, blockSize: clampedBlockSize),
@@ -2503,6 +2722,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _opponentScore = null;
       _opponentName = null;
       _opponentPhotoUrl = null;
+      _opponentTime = null;
+      _myTime = null;
       _isDuelWinner = null;
     });
   }
@@ -2535,10 +2756,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     final playerId = supabaseService.playerId;
     if (playerId == null || _duelId == null) return;
 
+    // Calculer le temps de jeu
+    int? playTime;
+    if (_sessionStartTime != null) {
+      playTime = DateTime.now().difference(_sessionStartTime!).inSeconds;
+    }
+
     final updatedDuel = await duelService.submitScore(
       duelId: _duelId!,
       playerId: playerId,
       score: _score,
+      timeInSeconds: playTime,
     );
 
     if (updatedDuel != null && mounted) {
@@ -2550,10 +2778,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
           _opponentScore = updatedDuel.challengedScore;
           _opponentName = updatedDuel.challengedName;
           _opponentPhotoUrl = updatedDuel.challengedPhotoUrl;
+          _opponentTime = updatedDuel.challengedTime;
+          _myTime = playTime;
         } else {
           _opponentScore = updatedDuel.challengerScore;
           _opponentName = updatedDuel.challengerName;
           _opponentPhotoUrl = updatedDuel.challengerPhotoUrl;
+          _opponentTime = updatedDuel.challengerTime;
+          _myTime = playTime;
         }
 
         // Déterminer le gagnant si les deux ont joué
@@ -2905,6 +3137,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
               _buildPlayerScoreCard(
                 name: _userName,
                 score: _score,
+                timeInSeconds: _myTime,
                 photoUrl: _googlePhotoUrl,
                 isWinner: _isDuelWinner == true,
               ),
@@ -2921,6 +3154,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
               _buildPlayerScoreCard(
                 name: _opponentName ?? 'Adversaire',
                 score: _opponentScore!,
+                timeInSeconds: _opponentTime,
                 photoUrl: _opponentPhotoUrl,
                 isWinner: _isDuelWinner == false,
               ),
@@ -2931,10 +3165,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     );
   }
 
+  /// Formate le temps en minutes:secondes
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
   /// Carte de score d'un joueur dans le résultat du duel
   Widget _buildPlayerScoreCard({
     required String name,
     required int score,
+    int? timeInSeconds,
     String? photoUrl,
     required bool isWinner,
   }) {
@@ -2987,6 +3229,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
             color: isWinner ? const Color(0xFFFFD700) : Colors.white,
           ),
         ),
+        // Temps de jeu
+        if (timeInSeconds != null)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.timer, color: Colors.white54, size: 12),
+              const SizedBox(width: 3),
+              Text(
+                _formatTime(timeInSeconds),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.white54,
+                ),
+              ),
+            ],
+          ),
         if (isWinner)
           const Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 16),
       ],
@@ -3007,6 +3265,147 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
         ),
       ),
     );
+  }
+
+  Widget _buildMiniAvatar(String? name) {
+    return Container(
+      color: const Color(0xFFFF6B9D),
+      child: Center(
+        child: Text(
+          (name != null && name.isNotEmpty) ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showOpponentInfo() {
+    if (_duelOpponentName == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF2A1B3D), Color(0xFF1A0F2E)],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE91E63), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Titre
+              const Text(
+                'TON ADVERSAIRE',
+                style: TextStyle(
+                  color: Color(0xFFE91E63),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Photo
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFFFD700), width: 3),
+                ),
+                child: ClipOval(
+                  child: _duelOpponentPhotoUrl != null
+                      ? Image.network(
+                          _duelOpponentPhotoUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _buildDefaultAvatar(_duelOpponentName ?? ''),
+                        )
+                      : _buildDefaultAvatar(_duelOpponentName ?? ''),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Nom
+              Text(
+                _duelOpponentName!,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Boutons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Bouton Fermer
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'FERMER',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  ),
+                  // Bouton Ajouter ami
+                  if (_duelOpponentId != null)
+                    ElevatedButton.icon(
+                      onPressed: () => _sendFriendRequest(context),
+                      icon: const Icon(Icons.person_add, size: 18),
+                      label: const Text('Ajouter ami'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE91E63),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendFriendRequest(BuildContext dialogContext) async {
+    if (_duelOpponentId == null) return;
+
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    final success = await friendService.sendFriendRequest(playerId, _duelOpponentId!);
+
+    if (success) {
+      // Envoyer notification à l'adversaire
+      await NotificationService.sendFriendRequest(
+        targetPlayerId: _duelOpponentId!,
+        senderName: supabaseService.userName ?? 'Quelqu\'un',
+      );
+    }
+
+    if (mounted) {
+      Navigator.pop(dialogContext);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Demande d\'ami envoyée à $_duelOpponentName !'
+              : 'Erreur lors de l\'envoi'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
   }
 }
 

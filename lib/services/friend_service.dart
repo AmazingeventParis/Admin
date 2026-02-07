@@ -83,6 +83,32 @@ class FriendService {
     }
   }
 
+  /// Accepte une demande d'ami en utilisant les IDs des joueurs
+  Future<bool> acceptFriendRequestByPlayerId(String myPlayerId, String senderPlayerId) async {
+    try {
+      await _client.from('friends').update({
+        'status': 'accepted',
+      }).eq('player_id', senderPlayerId).eq('friend_id', myPlayerId);
+      return true;
+    } catch (e) {
+      print('Erreur acceptation ami par playerId: $e');
+      return false;
+    }
+  }
+
+  /// Refuse une demande d'ami en utilisant les IDs des joueurs
+  Future<bool> declineFriendRequestByPlayerId(String myPlayerId, String senderPlayerId) async {
+    try {
+      await _client.from('friends').delete()
+          .eq('player_id', senderPlayerId)
+          .eq('friend_id', myPlayerId);
+      return true;
+    } catch (e) {
+      print('Erreur refus ami par playerId: $e');
+      return false;
+    }
+  }
+
   /// Supprime un ami
   Future<bool> removeFriend(String playerId, String friendId) async {
     try {
@@ -174,7 +200,7 @@ class FriendService {
     }
   }
 
-  /// Récupère tous les joueurs (pour onglet "Tous")
+  /// Récupère tous les joueurs (pour onglet "Tous") - sans les amis
   Future<List<PlayerSummary>> getAllPlayers(String currentPlayerId, {String? search}) async {
     try {
       var query = _client
@@ -186,9 +212,9 @@ class FriendService {
         query = query.ilike('username', '%$search%');
       }
 
-      final response = await query.order('username').limit(50);
+      final response = await query.order('username').limit(100);
 
-      // Récupérer les IDs des amis pour marquer le statut
+      // Récupérer les IDs des amis pour les exclure
       final friends = await getFriends(currentPlayerId);
       final friendIds = friends.map((f) => f.id).toSet();
 
@@ -196,13 +222,16 @@ class FriendService {
       final sentRequests = await _getSentPendingRequests(currentPlayerId);
       final sentRequestIds = sentRequests.toSet();
 
-      return (response as List).map((json) {
-        return PlayerSummary.fromJson(
-          json,
-          isFriend: friendIds.contains(json['id']),
-          hasPendingRequest: sentRequestIds.contains(json['id']),
-        );
-      }).toList();
+      // Filtrer pour exclure les amis
+      return (response as List)
+          .where((json) => !friendIds.contains(json['id']))
+          .map((json) {
+            return PlayerSummary.fromJson(
+              json,
+              isFriend: false,
+              hasPendingRequest: sentRequestIds.contains(json['id']),
+            );
+          }).toList();
     } catch (e) {
       print('Erreur récupération tous les joueurs: $e');
       return [];

@@ -1,7 +1,7 @@
 name: block_puzzle
 description: A classic block puzzle game built with Flutter.
 publish_to: 'none'
-version: 1.0.0+11
+version: 1.0.0+12
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -25,12 +25,12 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/ui/IconeIOS.png"
+  image_path: "assets/ui/app_icon.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#87CEEB"
-  adaptive_icon_foreground: "assets/ui/IconeIOS.png"
+  adaptive_icon_background: "#1a0a2e"
+  adaptive_icon_foreground: "assets/ui/app_icon.png"
   remove_alpha_ios: true
-  background_color_ios: "#87CEEB"
+  background_color_ios: "#1a0a2e"
 
 flutter:
   uses-material-design: true
@@ -72,4 +72,5 @@ flutter:
     - assets/ui/sugar_gauge.png
     - assets/ui/sugar_gauge_icon.png
     - assets/ui/cadrebloqueenbas.png
+    - assets/ui/Cadreonline.png
     - assets/sounds/

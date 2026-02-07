@@ -516,6 +516,9 @@ async function loadDuelsForPlayer(playerId) {
         displayPendingDuels(pendingDuels);
         displayActiveDuels(activeDuels);
 
+        // Charger et afficher les demandes d'amis
+        await loadFriendRequests(playerId, playersMap);
+
         // Charger la liste des joueurs pour défier
         await loadPlayersForChallenge(playerId, players);
 
@@ -525,6 +528,127 @@ async function loadDuelsForPlayer(playerId) {
     } catch (error) {
         console.error('Erreur chargement duels:', error);
         showToast('Erreur chargement duels', 'error');
+    }
+}
+
+// Charger les demandes d'amis pour un faux profil
+async function loadFriendRequests(playerId, playersMap) {
+    try {
+        // Charger les demandes d'amis où ce joueur est le destinataire
+        const { data: requests, error } = await supabaseClient
+            .from('friends')
+            .select('id, player_id, friend_id, status')
+            .eq('friend_id', playerId)
+            .eq('status', 'pending');
+
+        if (error) throw error;
+
+        displayFriendRequests(requests || [], playersMap);
+
+    } catch (error) {
+        console.error('Erreur chargement demandes amis:', error);
+    }
+}
+
+// Afficher les demandes d'amis
+function displayFriendRequests(requests, playersMap) {
+    const container = document.getElementById('friendRequestsList');
+
+    if (!container) return;
+
+    if (requests.length === 0) {
+        container.innerHTML = '<div class="no-duels">Aucune demande d\'ami</div>';
+        return;
+    }
+
+    container.innerHTML = requests.map(request => {
+        const sender = playersMap[request.player_id] || { username: 'Inconnu', photo_url: null };
+        return `
+            <div class="duel-card">
+                <div class="duel-info">
+                    ${sender.photo_url
+                        ? `<img src="${sender.photo_url}" alt="${sender.username}">`
+                        : `<div style="width:45px;height:45px;border-radius:50%;background:linear-gradient(135deg,#ff6b9d,#ffc371);display:flex;align-items:center;justify-content:center;font-weight:bold;">${sender.username?.[0] || '?'}</div>`
+                    }
+                    <div class="duel-details">
+                        <span class="opponent-name">${sender.username || 'Inconnu'}</span>
+                        <span class="duel-status">Veut être ton ami</span>
+                    </div>
+                </div>
+                <div class="duel-actions">
+                    <button class="btn btn-accept" onclick="acceptFriendRequest('${request.player_id}')">✅ Accepter</button>
+                    <button class="btn btn-decline" onclick="declineFriendRequest('${request.player_id}')">❌ Refuser</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Accepter une demande d'ami
+async function acceptFriendRequest(senderId) {
+    try {
+        const { error } = await supabaseClient
+            .from('friends')
+            .update({ status: 'accepted' })
+            .eq('player_id', senderId)
+            .eq('friend_id', currentPlayerId);
+
+        if (error) throw error;
+
+        // Envoyer notification au demandeur
+        try {
+            await supabaseClient.functions.invoke('send-notification', {
+                body: {
+                    type: 'friend_accepted',
+                    target_player_id: senderId,
+                    title: 'Ami accepté !',
+                    body: `${currentPlayerName} a accepté ta demande d'ami !`
+                }
+            });
+        } catch (notifError) {
+            console.error('Erreur notification:', notifError);
+        }
+
+        showToast('Demande acceptée!', 'success');
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur acceptation ami:', error);
+        showToast('Erreur acceptation', 'error');
+    }
+}
+
+// Refuser une demande d'ami
+async function declineFriendRequest(senderId) {
+    try {
+        const { error } = await supabaseClient
+            .from('friends')
+            .delete()
+            .eq('player_id', senderId)
+            .eq('friend_id', currentPlayerId);
+
+        if (error) throw error;
+
+        // Envoyer notification au demandeur
+        try {
+            await supabaseClient.functions.invoke('send-notification', {
+                body: {
+                    type: 'friend_declined',
+                    target_player_id: senderId,
+                    title: 'Demande refusée',
+                    body: `${currentPlayerName} a refusé ta demande d'ami.`
+                }
+            });
+        } catch (notifError) {
+            console.error('Erreur notification:', notifError);
+        }
+
+        showToast('Demande refusée', 'success');
+        await loadDuelsForPlayer(currentPlayerId);
+
+    } catch (error) {
+        console.error('Erreur refus ami:', error);
+        showToast('Erreur refus', 'error');
     }
 }
 
@@ -664,6 +788,22 @@ async function createChallenge() {
 
         if (error) throw error;
 
+        // Envoyer la notification push au joueur défié
+        try {
+            await supabaseClient.functions.invoke('send-notification', {
+                body: {
+                    type: 'duel_challenge',
+                    target_player_id: targetId,
+                    title: 'Nouveau défi !',
+                    body: `${currentPlayerName} vous a défié en duel !`
+                }
+            });
+            console.log('Notification envoyée au joueur:', targetId);
+        } catch (notifError) {
+            console.error('Erreur envoi notification:', notifError);
+            // On continue même si la notification échoue
+        }
+
         showToast('Défi envoyé!', 'success');
         document.getElementById('challengeTarget').value = '';
         await loadDuelsForPlayer(currentPlayerId);
@@ -722,19 +862,29 @@ async function submitSimulatedScore() {
 
         const isChallenger = duel.challenger_id === currentPlayerId;
         const scoreField = isChallenger ? 'challenger_score' : 'challenged_score';
+        const timeField = isChallenger ? 'challenger_time' : 'challenged_time';
         const opponentScoreField = isChallenger ? 'challenged_score' : 'challenger_score';
 
         // Vérifier si l'adversaire a aussi joué
         const opponentScore = duel[opponentScoreField];
-        let updateData = { [scoreField]: score };
+
+        // Générer un temps aléatoire réaliste (entre 1 et 5 minutes)
+        const randomTime = Math.floor(Math.random() * 240) + 60; // 60-300 secondes
+
+        let updateData = {
+            [scoreField]: score,
+            [timeField]: randomTime
+        };
 
         // Si les deux ont joué, déterminer le gagnant
+        const opponentId = isChallenger ? duel.challenged_id : duel.challenger_id;
+
         if (opponentScore !== null) {
             let winnerId = null;
             if (score > opponentScore) {
                 winnerId = currentPlayerId;
             } else if (opponentScore > score) {
-                winnerId = isChallenger ? duel.challenged_id : duel.challenger_id;
+                winnerId = opponentId;
             }
             // En cas d'égalité, winner_id reste null
 
@@ -748,6 +898,32 @@ async function submitSimulatedScore() {
             .eq('id', currentDuelId);
 
         if (error) throw error;
+
+        // Envoyer les notifications de résultat si le duel est terminé
+        if (opponentScore !== null) {
+            try {
+                // Notification pour l'adversaire (le vrai joueur)
+                const botWon = score > opponentScore;
+                const resultTitle = botWon ? 'Duel perdu...' : (score < opponentScore ? 'Victoire !' : 'Égalité !');
+                const resultBody = botWon
+                    ? `${currentPlayerName} vous a battu ${formatNumber(score)} à ${formatNumber(opponentScore)}`
+                    : (score < opponentScore
+                        ? `Vous avez battu ${currentPlayerName} ${formatNumber(opponentScore)} à ${formatNumber(score)} !`
+                        : `Égalité contre ${currentPlayerName} : ${formatNumber(score)} partout !`);
+
+                await supabaseClient.functions.invoke('send-notification', {
+                    body: {
+                        type: 'duel_result',
+                        target_player_id: opponentId,
+                        title: resultTitle,
+                        body: resultBody
+                    }
+                });
+                console.log('Notification de résultat envoyée');
+            } catch (notifError) {
+                console.error('Erreur envoi notification résultat:', notifError);
+            }
+        }
 
         // Mettre à jour le high_score du bot si nécessaire
         await updateBotHighScore(currentPlayerId, score);

@@ -143,6 +143,66 @@ class NotificationService {
       print('Erreur envoi notification résultat: $e');
     }
   }
+
+  /// Envoie une notification de demande d'ami
+  static Future<void> sendFriendRequest({
+    required String targetPlayerId,
+    required String senderName,
+  }) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'send-notification',
+        body: {
+          'type': 'friend_request',
+          'target_player_id': targetPlayerId,
+          'title': 'Demande d\'ami',
+          'body': '$senderName veut être ton ami !',
+        },
+      );
+    } catch (e) {
+      print('Erreur envoi notification demande ami: $e');
+    }
+  }
+
+  /// Envoie une notification d'acceptation de demande d'ami
+  static Future<void> sendFriendRequestAccepted({
+    required String targetPlayerId,
+    required String accepterName,
+  }) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'send-notification',
+        body: {
+          'type': 'friend_accepted',
+          'target_player_id': targetPlayerId,
+          'title': 'Ami accepté !',
+          'body': '$accepterName a accepté ta demande d\'ami !',
+        },
+      );
+    } catch (e) {
+      print('Erreur envoi notification ami accepté: $e');
+    }
+  }
+
+  /// Envoie une notification de refus de demande d'ami
+  static Future<void> sendFriendRequestDeclined({
+    required String targetPlayerId,
+    required String declinerName,
+  }) async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'send-notification',
+        body: {
+          'type': 'friend_declined',
+          'target_player_id': targetPlayerId,
+          'title': 'Demande refusée',
+          'body': '$declinerName a refusé ta demande d\'ami.',
+        },
+      );
+    } catch (e) {
+      print('Erreur envoi notification ami refusé: $e');
+    }
+  }
 }
 
 // Instance globale
