@@ -1795,6 +1795,71 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
     }
   }
 
+  /// Affiche le profil d'un ami avec ses stats et option de suppression
+  void _showFriendProfile(PlayerSummary player) {
+    showDialog(
+      context: context,
+      builder: (context) => _FriendProfileDialog(
+        player: player,
+        onRemoveFriend: () async {
+          final playerId = supabaseService.playerId;
+          if (playerId == null) return;
+
+          // Confirmer la suppression
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF2A1B3D),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text(
+                'Supprimer cet ami ?',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              content: Text(
+                'Tu ne seras plus ami avec ${player.username}.',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Supprimer', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            final success = await friendService.removeFriend(playerId, player.id);
+            if (mounted) {
+              Navigator.pop(context); // Fermer le dialog du profil
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(success
+                    ? '${player.username} a été supprimé de tes amis'
+                    : 'Erreur lors de la suppression'),
+                  backgroundColor: success ? Colors.orange : Colors.red,
+                ),
+              );
+              if (success) _loadData(); // Recharger la liste
+            }
+          }
+        },
+        onChallenge: () {
+          Navigator.pop(context); // Fermer le dialog
+          _challengePlayer(player);
+        },
+      ),
+    );
+  }
+
   Widget _buildPlayerList(double screenWidth) {
     return ListView.builder(
       padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03),
@@ -1834,34 +1899,37 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
           // Contenu par dessus avec positions exactes
           Stack(
             children: [
-              // Photo - left=20, top=22
+              // Photo - left=20, top=22 - cliquable pour voir le profil
               Positioned(
                 left: 20,
                 top: 22,
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFFFD700),
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFFD700).withOpacity(0.5),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: player.photoUrl != null
-                        ? Image.network(
-                            player.photoUrl!,
-                            fit: BoxFit.cover,
-                            width: 46,
-                            height: 46,
-                            errorBuilder: (_, __, ___) => _buildDefaultAvatarLetter(player.username),
-                          )
-                        : _buildDefaultAvatarLetter(player.username),
+                child: GestureDetector(
+                  onTap: () => _showFriendProfile(player),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFD700),
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFFD700).withOpacity(0.5),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: player.photoUrl != null
+                          ? Image.network(
+                              player.photoUrl!,
+                              fit: BoxFit.cover,
+                              width: 46,
+                              height: 46,
+                              errorBuilder: (_, __, ___) => _buildDefaultAvatarLetter(player.username),
+                            )
+                          : _buildDefaultAvatarLetter(player.username),
+                    ),
                   ),
                 ),
               ),
@@ -2194,6 +2262,342 @@ class _PlayerInfoDialog extends StatelessWidget {
       child: Center(
         child: Text(
           playerName.isNotEmpty ? playerName[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 40,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dialog pour afficher le profil complet d'un ami avec stats
+class _FriendProfileDialog extends StatefulWidget {
+  final PlayerSummary player;
+  final VoidCallback onRemoveFriend;
+  final VoidCallback onChallenge;
+
+  const _FriendProfileDialog({
+    required this.player,
+    required this.onRemoveFriend,
+    required this.onChallenge,
+  });
+
+  @override
+  State<_FriendProfileDialog> createState() => _FriendProfileDialogState();
+}
+
+class _FriendProfileDialogState extends State<_FriendProfileDialog> {
+  Map<String, dynamic>? _stats;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    final stats = await friendService.getPlayerStats(widget.player.id);
+    if (mounted) {
+      setState(() {
+        _stats = stats;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2A1B3D), Color(0xFF1A0F2E)],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE91E63), width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFE91E63).withOpacity(0.3),
+              blurRadius: 20,
+              spreadRadius: 5,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header avec photo et statut
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Photo
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFFFD700), width: 4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFD700).withOpacity(0.4),
+                        blurRadius: 15,
+                        spreadRadius: 3,
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: widget.player.photoUrl != null
+                        ? Image.network(
+                            widget.player.photoUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _buildDefaultAvatar(),
+                          )
+                        : _buildDefaultAvatar(),
+                  ),
+                ),
+                // Pastille online/offline
+                Positioned(
+                  bottom: 5,
+                  right: 5,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.player.isOnline ? Colors.green : Colors.red,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (widget.player.isOnline ? Colors.green : Colors.red).withOpacity(0.6),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Nom
+            Text(
+              widget.player.username,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            // Statut
+            Text(
+              widget.player.isOnline ? '🟢 En ligne' : '🔴 Hors ligne',
+              style: TextStyle(
+                color: widget.player.isOnline ? Colors.green[300] : Colors.red[300],
+                fontSize: 14,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Stats
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(color: Color(0xFFE91E63)),
+              )
+            else
+              _buildStatsGrid(),
+
+            const SizedBox(height: 20),
+
+            // Boutons d'action
+            Row(
+              children: [
+                // Bouton Supprimer
+                Expanded(
+                  child: GestureDetector(
+                    onTap: widget.onRemoveFriend,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFF6B6B), Color(0xFFEE5A5A)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.person_remove, color: Colors.white, size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            'Supprimer',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Bouton Défier
+                Expanded(
+                  child: GestureDetector(
+                    onTap: widget.onChallenge,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFF6B9D), Color(0xFFE91E63)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE91E63).withOpacity(0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.sports_esports, color: Colors.white, size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            'Défier',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Bouton Fermer
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Fermer',
+                style: TextStyle(color: Colors.white54, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    final gamesPlayed = _stats?['games_played'] ?? 0;
+    final highScore = _stats?['high_score'] ?? 0;
+    final totalScore = _stats?['total_score'] ?? 0;
+    final bestCombo = _stats?['best_combo'] ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _buildStatItem(Icons.games, 'Parties', '$gamesPlayed', Colors.blue),
+              const SizedBox(width: 16),
+              _buildStatItem(Icons.emoji_events, 'Record', '$highScore', Colors.amber),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildStatItem(Icons.stars, 'Total', '$totalScore', Colors.purple),
+              const SizedBox(width: 16),
+              _buildStatItem(Icons.flash_on, 'Combo', 'x$bestCombo', Colors.orange),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String label, String value, Color color) {
+    return Expanded(
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultAvatar() {
+    return Container(
+      color: const Color(0xFFFF6B9D),
+      child: Center(
+        child: Text(
+          widget.player.username.isNotEmpty ? widget.player.username[0].toUpperCase() : '?',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,

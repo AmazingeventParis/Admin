@@ -305,6 +305,22 @@ class FriendService {
       print('Erreur mise hors ligne: $e');
     }
   }
+
+  /// Récupère les stats d'un joueur
+  Future<Map<String, dynamic>?> getPlayerStats(String playerId) async {
+    try {
+      final response = await _client
+          .from('player_stats')
+          .select('*')
+          .eq('player_id', playerId)
+          .maybeSingle();
+
+      return response;
+    } catch (e) {
+      print('Erreur récupération stats: $e');
+      return null;
+    }
+  }
 }
 
 // Instance globale
