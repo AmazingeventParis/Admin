@@ -40,7 +40,8 @@
       "Bash(py --version)",
       "Bash(convert:*)",
       "Bash(if not exist \"lib\\\\logic\" mkdir \"lib\\\\logic\")",
-      "Bash(cmd /c copy:*)"
+      "Bash(cmd /c copy:*)",
+      "Bash(if exist iosPodfile.lock del iosPodfile.lock)"
     ]
   }
 }
