@@ -1027,6 +1027,98 @@ dependencies:
 
 ---
 
+## Date: 8 Février 2026
+
+---
+
+## Session du 8 Février 2026 - Corrections UI Game Over
+
+### 1. Boutons Game Over trop grands
+
+#### Problème
+- Les boutons QUITTER et REJOUER étaient trop grands
+- Le bouton REJOUER sortait de l'écran (coupé à droite)
+
+#### Solution - Réduction des tailles
+```dart
+// Avant → Après
+padding: horizontal: 22, vertical: 14 → horizontal: 14, vertical: 10
+icon container padding: 6 → 4
+icon size: 22 → 18
+font size: 16 → 14
+letter spacing: 1.5 → 1.2
+SizedBox width: 10 → 8
+```
+
+### 2. Best Score en temps réel
+
+#### Problème
+- Quand le joueur dépasse son meilleur score, l'affichage "BEST" ne se mettait pas à jour pendant le jeu
+- Le Best score restait figé jusqu'au Game Over
+
+#### Solution
+- Ajout d'une vérification après chaque mise à jour du score :
+```dart
+// Dans setState après _score += ...
+if (_score > _highScore) {
+  _highScore = _score;
+}
+```
+- Ajouté à 2 endroits :
+  1. Score des lignes complétées (ligne ~948)
+  2. Score des explosions Jelly Bomb (ligne ~676)
+
+### 3. TestFlight - Lien Public
+
+#### Fonctionnement du lien public
+- Le lien reste **toujours le même** : `testflight.apple.com/join/Kpujctb1`
+- Le lien est lié au **groupe**, pas au build
+- Les nouvelles versions sont automatiquement disponibles via le même lien
+
+#### Beta App Review
+- Première soumission : peut prendre 24-48h
+- Versions suivantes : généralement approuvées automatiquement (quelques minutes/heures)
+- Statut visible : "En attente de vérification" → "Approuvé"
+
+#### Types de testeurs
+| Type | Approbation Apple | Ajout |
+|------|------------------|-------|
+| Internes | Non requise | Membres équipe App Store Connect |
+| Externes | Requise (Beta Review) | N'importe quel email |
+
+### 4. Avertissement iOS Info.plist
+
+#### Message
+```
+90683: Missing purpose string in Info.plist - NSLocationWhenInUseUsageDescription
+```
+
+#### Explication
+- C'est un **avertissement**, pas une erreur
+- Provient de OneSignal qui inclut la capacité de localisation
+- N'empêche pas le build de fonctionner
+- Peut être ignoré si l'app n'utilise pas la localisation
+
+---
+
+## Fichiers Modifiés (8 Février)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/ui/screens/game_screen.dart` | Boutons plus petits + Best score temps réel |
+| `pubspec.yaml` | Version 1.0.0+21 |
+
+---
+
+## Historique des Builds TestFlight (Récent)
+
+| Build | Version | Contenu | Status |
+|-------|---------|---------|--------|
+| 20 | 1.0.0+20 | Notifications push OneSignal | En attente de vérification |
+| 21 | 1.0.0+21 | Fix boutons + Best score temps réel | À compiler |
+
+---
+
 ## Prochaines Étapes
 
 1. ~~**Notifications push**~~ - FAIT - OneSignal configuré
