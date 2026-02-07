@@ -54,12 +54,11 @@ class DuelService {
     }
   }
 
-  /// Refuse un défi de duel
+  /// Refuse un défi de duel - supprime complètement le duel
   Future<bool> declineDuel(String duelId) async {
     try {
-      await _client.from('duels').update({
-        'status': 'declined',
-      }).eq('id', duelId);
+      // Supprimer le duel complètement pour éviter qu'il réapparaisse
+      await _client.from('duels').delete().eq('id', duelId);
       return true;
     } catch (e) {
       print('Erreur refus duel: $e');
