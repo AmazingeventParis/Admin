@@ -8,12 +8,29 @@ class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static String? _fcmToken;
 
-  /// Initialise Firebase et les notifications
-  static Future<void> initialize() async {
-    try {
-      // Initialiser Firebase
-      await Firebase.initializeApp();
+  static bool _isInitialized = false;
 
+  /// Initialise Firebase et les notifications (optionnel - ne crash pas si échoue)
+  static Future<void> initialize() async {
+    // Skip sur iOS si Firebase n'est pas configuré correctement
+    try {
+      // Vérifier si Firebase est déjà initialisé
+      if (Firebase.apps.isNotEmpty) {
+        _isInitialized = true;
+      } else {
+        // Essayer d'initialiser Firebase
+        await Firebase.initializeApp();
+        _isInitialized = true;
+      }
+    } catch (e) {
+      print('Firebase non disponible (optionnel): $e');
+      _isInitialized = false;
+      return; // Ne pas crasher, juste ignorer les notifications
+    }
+
+    if (!_isInitialized) return;
+
+    try {
       // Demander les permissions de notification
       final settings = await _messaging.requestPermission(
         alert: true,
@@ -91,6 +108,7 @@ class NotificationService {
     required String challengedPlayerId,
     required String challengerName,
   }) async {
+    if (!_isInitialized) return; // Skip si Firebase non disponible
     try {
       // Appeler une Edge Function Supabase pour envoyer la notification
       await Supabase.instance.client.functions.invoke(
@@ -115,6 +133,7 @@ class NotificationService {
     required int opponentScore,
     required bool isWinner,
   }) async {
+    if (!_isInitialized) return;
     try {
       final String title;
       final String body;
