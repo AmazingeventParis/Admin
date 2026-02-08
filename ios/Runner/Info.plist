@@ -65,5 +65,7 @@
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cette app utilise votre position pour améliorer les notifications et fonctionnalités de jeu.</string>
 </dict>
 </plist>
