@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 import '../widgets/candy_ui.dart';
@@ -52,6 +54,25 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Future<void> _signInWithApple() async {
+    setState(() => _isLoading = true);
+
+    final success = await supabaseService.signInWithApple();
+
+    setState(() => _isLoading = false);
+
+    if (success && mounted) {
+      _goToGame();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erreur de connexion Apple. Réessaie.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _playWithoutAccount() {
     _goToGame();
   }
@@ -92,7 +113,15 @@ class _AuthScreenState extends State<AuthScreen> {
 
                   // Bouton Google Sign-In
                   _buildGoogleButton(),
-                  const SizedBox(height: 15),
+                  const SizedBox(height: 12),
+
+                  // Bouton Apple Sign-In (iOS uniquement)
+                  if (!kIsWeb && Platform.isIOS) ...[
+                    _buildAppleButton(),
+                    const SizedBox(height: 15),
+                  ] else ...[
+                    const SizedBox(height: 3),
+                  ],
 
                   // Texte explicatif
                   Container(
@@ -219,6 +248,57 @@ class _AuthScreenState extends State<AuthScreen> {
                     'Continuer avec Google',
                     style: TextStyle(
                       color: Colors.black87,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildAppleButton() {
+    return GestureDetector(
+      onTap: _isLoading ? null : _signInWithApple,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: _isLoading
+            ? const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              )
+            : const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.apple,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  SizedBox(width: 12),
+                  Text(
+                    'Continuer avec Apple',
+                    style: TextStyle(
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),

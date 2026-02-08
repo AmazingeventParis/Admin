@@ -1,8 +1,12 @@
 import 'dart:io' show Platform;
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:crypto/crypto.dart';
 import 'stats_service.dart';
 import 'notification_service.dart';
 
@@ -103,6 +107,117 @@ class SupabaseService {
     } catch (e) {
       print('Erreur Google Sign-In: $e');
       return false;
+    }
+  }
+
+  /// Connexion avec Apple
+  Future<bool> signInWithApple() async {
+    try {
+      // Générer un nonce aléatoire pour la sécurité
+      final rawNonce = _generateNonce();
+      final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+      // Demander les credentials Apple
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        print('Apple Sign-In: Pas de token');
+        return false;
+      }
+
+      // Se connecter à Supabase avec le token Apple
+      final response = await client.auth.signInWithIdToken(
+        provider: OAuthProvider.apple,
+        idToken: idToken,
+        nonce: rawNonce,
+      );
+
+      _currentUser = response.user;
+
+      if (_currentUser != null) {
+        // Stocker le nom Apple (il n'est fourni qu'à la première connexion)
+        String? appleFullName;
+        if (credential.givenName != null || credential.familyName != null) {
+          appleFullName = '${credential.givenName ?? ''} ${credential.familyName ?? ''}'.trim();
+          // Sauvegarder pour les futures connexions
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('apple_user_name', appleFullName);
+        } else {
+          // Récupérer le nom sauvegardé
+          final prefs = await SharedPreferences.getInstance();
+          appleFullName = prefs.getString('apple_user_name');
+        }
+
+        // Créer ou mettre à jour le joueur
+        await _createOrUpdatePlayerFromApple(appleFullName);
+        await NotificationService.updateTokenAfterLogin();
+        await statsService.init();
+        await statsService.loadFromCloudForNewUser();
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      print('Erreur Apple Sign-In: $e');
+      return false;
+    }
+  }
+
+  /// Génère un nonce aléatoire pour Apple Sign-In
+  String _generateNonce([int length = 32]) {
+    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  }
+
+  /// Crée ou met à jour le joueur depuis Apple Sign-In
+  Future<void> _createOrUpdatePlayerFromApple(String? fullName) async {
+    if (_currentUser == null) return;
+
+    try {
+      final email = _currentUser!.email ?? _currentUser!.id;
+      final name = (fullName?.split(' ').first) ?? 'Joueur';
+
+      final existingPlayer = await client
+          .from('players')
+          .select('id')
+          .eq('device_id', 'apple_$email')
+          .maybeSingle();
+
+      if (existingPlayer != null) {
+        _playerId = existingPlayer['id'];
+        await client
+            .from('players')
+            .update({
+              'username': name,
+              'updated_at': DateTime.now().toIso8601String()
+            })
+            .eq('id', _playerId!);
+      } else {
+        final newPlayer = await client
+            .from('players')
+            .insert({
+              'device_id': 'apple_$email',
+              'username': name,
+            })
+            .select('id')
+            .single();
+
+        _playerId = newPlayer['id'];
+
+        await client.from('player_stats').insert({
+          'player_id': _playerId,
+        });
+      }
+    } catch (e) {
+      print('Erreur _createOrUpdatePlayerFromApple: $e');
     }
   }
 
