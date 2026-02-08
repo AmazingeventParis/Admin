@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'ui/screens/splash_screen.dart';
+import 'ui/screens/auth_screen.dart';
+import 'ui/screens/menu_screen.dart';
 import 'services/supabase_service.dart';
 import 'services/notification_service.dart';
 
@@ -43,11 +44,22 @@ void main() async {
     print('Erreur OneSignal init: $e');
   }
 
-  runApp(const BlockPuzzleApp());
+  // Vérifier si l'utilisateur est déjà connecté
+  bool isLoggedIn = false;
+  try {
+    await supabaseService.checkSession();
+    isLoggedIn = supabaseService.isLoggedIn;
+  } catch (e) {
+    print('Erreur checkSession: $e');
+  }
+
+  runApp(BlockPuzzleApp(isLoggedIn: isLoggedIn));
 }
 
 class BlockPuzzleApp extends StatelessWidget {
-  const BlockPuzzleApp({super.key});
+  final bool isLoggedIn;
+
+  const BlockPuzzleApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +76,7 @@ class BlockPuzzleApp extends StatelessWidget {
           surface: Color(0xFF1E1E1E),
         ),
       ),
-      home: const SplashScreen(),
+      home: isLoggedIn ? const MenuScreen() : const AuthScreen(),
     );
   }
 }
