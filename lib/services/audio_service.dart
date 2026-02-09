@@ -21,6 +21,7 @@ class AudioService {
   double _introVolume = 0.6;
   double _gameVolume = 0.5;
   double _sfxVolume = 0.8;
+  bool _isMuted = false;
 
   /// Initialiser le service audio
   Future<void> init() async {
@@ -152,7 +153,7 @@ class AudioService {
         soundFile = 'sounds/combo.mp3';
         break;
       case 'place':
-        soundFile = 'sounds/place.mp4';
+        soundFile = 'sounds/place.mp3';
         break;
       case 'combo':
         soundFile = 'sounds/combo.mp3';
@@ -180,6 +181,26 @@ class AudioService {
 
   bool get isIntroPlaying => _isIntroPlaying;
   bool get isGamePlaying => _isGamePlaying;
+  bool get isMuted => _isMuted;
+
+  /// Activer/désactiver la musique (les effets sonores restent actifs)
+  Future<void> toggleMute() async {
+    _isMuted = !_isMuted;
+    if (_isMuted) {
+      await _introPlayer.setVolume(0);
+      await _gamePlayer.setVolume(0);
+    } else {
+      await _introPlayer.setVolume(_introVolume);
+      await _gamePlayer.setVolume(_gameVolume);
+    }
+  }
+
+  /// Définir le mode muet
+  Future<void> setMuted(bool muted) async {
+    if (_isMuted != muted) {
+      await toggleMute();
+    }
+  }
 }
 
 /// Instance globale du service audio

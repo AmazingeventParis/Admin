@@ -1,7 +1,8 @@
 /// Statut d'un duel
 enum DuelStatus {
   pending,    // En attente de réponse
-  active,     // Accepté, en cours
+  active,     // Accepté, en cours (async)
+  live,       // Duel en temps réel simultané
   completed,  // Terminé
   declined,   // Refusé
   expired,    // Expiré
@@ -72,6 +73,8 @@ class Duel {
         return DuelStatus.pending;
       case 'active':
         return DuelStatus.active;
+      case 'live':
+        return DuelStatus.live;
       case 'completed':
         return DuelStatus.completed;
       case 'declined':
@@ -87,7 +90,10 @@ class Duel {
   bool get isPending => status == DuelStatus.pending;
 
   /// Vérifie si le duel est en cours
-  bool get isActive => status == DuelStatus.active;
+  bool get isActive => status == DuelStatus.active || status == DuelStatus.live;
+
+  /// Vérifie si le duel est en mode temps réel
+  bool get isLive => status == DuelStatus.live;
 
   /// Vérifie si le duel est terminé
   bool get isCompleted => status == DuelStatus.completed;

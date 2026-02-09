@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/supabase_service.dart';
 import '../../services/duel_service.dart';
 import '../../services/friend_service.dart';
@@ -35,6 +36,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
 
   // Timer pour mise à jour du statut en ligne
   Timer? _onlineStatusTimer;
+  // Timer pour rotation des bots en ligne
+  Timer? _botRotationTimer;
 
   @override
   void initState() {
@@ -43,6 +46,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
     _loadUserData();
     _setupAnimations();
     _startOnlineStatusUpdater();
+    _startBotOnlineSimulation();
+    _checkPendingBotCompletion();
   }
 
   /// Détecte quand l'app passe en arrière-plan ou revient
@@ -77,6 +82,76 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
     }
   }
 
+  /// Vérifie si un bot doit finir sa partie (soumission différée)
+  Future<void> _checkPendingBotCompletion() async {
+    final prefs = await SharedPreferences.getInstance();
+    final duelId = prefs.getString('pending_bot_duel_id');
+    if (duelId == null) return;
+
+    final finishAt = prefs.getInt('pending_bot_finish_at') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (now >= finishAt) {
+      // Le bot a fini, soumettre son score
+      final opponentId = prefs.getString('pending_bot_opponent_id') ?? '';
+      final botScore = prefs.getInt('pending_bot_score') ?? 0;
+      final botTime = prefs.getInt('pending_bot_time') ?? 60;
+
+      try {
+        await duelService.submitScore(
+          duelId: duelId,
+          playerId: opponentId,
+          score: botScore,
+          timeInSeconds: botTime,
+        );
+      } catch (e) {
+        print('Erreur soumission bot différée: $e');
+      }
+
+      // Nettoyer
+      await prefs.remove('pending_bot_duel_id');
+      await prefs.remove('pending_bot_opponent_id');
+      await prefs.remove('pending_bot_score');
+      await prefs.remove('pending_bot_time');
+      await prefs.remove('pending_bot_finish_at');
+    } else {
+      // Pas encore le moment, planifier pour plus tard
+      final remaining = finishAt - now;
+      Timer(Duration(milliseconds: remaining), () {
+        if (mounted) _checkPendingBotCompletion();
+      });
+    }
+  }
+
+  /// Simule des bots en ligne de manière aléatoire
+  void _startBotOnlineSimulation() {
+    // Première rotation immédiate (choix aléatoire des bots en ligne)
+    friendService.simulateBotOnlineStatus();
+
+    // Rafraîchir le last_seen_at des bots en ligne toutes les 45 secondes
+    _botRotationTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
+      friendService.refreshBotOnlineStatus();
+    });
+
+    // Changer les bots en ligne toutes les 3-5 minutes (rotation)
+    Future.delayed(Duration(minutes: 3 + DateTime.now().second % 3), () {
+      if (mounted) {
+        _rotateBots();
+      }
+    });
+  }
+
+  /// Rotation des bots en ligne (change le groupe de bots connectés)
+  void _rotateBots() async {
+    await friendService.simulateBotOnlineStatus();
+    // Planifier la prochaine rotation dans 3-5 minutes
+    Future.delayed(Duration(minutes: 3 + DateTime.now().second % 3), () {
+      if (mounted) {
+        _rotateBots();
+      }
+    });
+  }
+
   void _setupAnimations() {
     _buttonController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -105,6 +180,24 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
         _userName = supabaseService.userName!;
         _googlePhotoUrl = supabaseService.userAvatar;
       });
+    } else {
+      // Joueur anonyme : lire le prénom depuis SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final savedName = prefs.getString('userName');
+      if (savedName != null && savedName.isNotEmpty && mounted) {
+        // Initialiser le joueur dans la base de données
+        await supabaseService.getOrCreatePlayer(savedName);
+        setState(() {
+          _userName = savedName;
+        });
+      } else if (mounted) {
+        // Pas de prénom sauvegardé → renvoyer vers l'écran de connexion
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const AuthScreen()),
+          (route) => false,
+        );
+        return;
+      }
     }
 
     // Charger le nombre de duels en attente et messages non lus
@@ -125,6 +218,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _onlineStatusTimer?.cancel();
+    _botRotationTimer?.cancel();
     _buttonController.dispose();
     _menuButtonController.dispose();
     super.dispose();

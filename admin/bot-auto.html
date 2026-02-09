@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Auto-Player - Candy Puzzle</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a0a2e, #2d1b4e, #1a0a2e);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 { text-align: center; color: #E91E63; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 20px; }
+
+        /* Status bar */
+        .status-bar {
+            max-width: 800px;
+            margin: 0 auto 15px;
+            background: rgba(76, 175, 80, 0.15);
+            border: 1px solid #4CAF50;
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .status-bar.offline {
+            background: rgba(244, 67, 54, 0.15);
+            border-color: #F44336;
+        }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #4CAF50;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        .status-bar.offline .status-dot { background: #F44336; animation: none; }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        .status-info { font-size: 14px; }
+        .status-stats { font-size: 12px; color: #aaa; }
+
+        /* Controls (optionnel, pour ajuster en live) */
+        .controls {
+            max-width: 800px;
+            margin: 0 auto 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .controls label { font-size: 12px; color: #aaa; }
+        select, input[type="range"] {
+            padding: 5px 8px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            background: #2d1b4e;
+            color: white;
+            font-size: 12px;
+        }
+        input[type="range"] { width: 120px; }
+        button {
+            padding: 7px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-stop { background: #F44336; color: white; }
+        .btn-start { background: #4CAF50; color: white; }
+
+        /* Bot cards */
+        .bot-dashboard {
+            max-width: 800px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 10px;
+        }
+        .bot-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 12px;
+            border-left: 4px solid #555;
+        }
+        .bot-card.playing { border-left-color: #FFD700; }
+        .bot-card.waiting { border-left-color: #4CAF50; }
+        .bot-card.finished { border-left-color: #2196F3; }
+        .bot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .bot-name { font-weight: bold; font-size: 14px; }
+        .bot-badge { font-size: 11px; padding: 2px 8px; border-radius: 6px; }
+        .badge-idle { background: #555; }
+        .badge-waiting { background: #FF9800; }
+        .badge-playing { background: #4CAF50; }
+        .badge-finished { background: #2196F3; }
+        .bot-score { font-size: 22px; font-weight: bold; color: #FFD700; }
+        .bot-info { font-size: 11px; color: #888; margin-top: 2px; }
+
+        /* Mini grid */
+        .mini-grid {
+            display: inline-grid;
+            grid-template-columns: repeat(8, 7px);
+            grid-template-rows: repeat(8, 7px);
+            gap: 1px;
+        }
+        .mini-cell { width: 7px; height: 7px; border-radius: 1px; background: rgba(255,255,255,0.08); }
+        .c0 { background: #FFD700 !important; }
+        .c1 { background: #4169E1 !important; }
+        .c2 { background: #00CED1 !important; }
+        .c3 { background: #FF8C00 !important; }
+        .c4 { background: #9932CC !important; }
+        .c5 { background: #FF00FF !important; }
+        .c6 { background: #FF4757 !important; }
+
+        /* Log */
+        .log-section {
+            max-width: 800px;
+            margin: 15px auto 0;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 10px;
+            max-height: 180px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        .log-entry { padding: 1px 0; color: #666; }
+        .log-entry.important { color: #FFD700; }
+        .log-entry.error { color: #FF6B6B; }
+        .log-entry.success { color: #4CAF50; }
+    </style>
+</head>
+<body>
+    <h1>Bot Auto-Player</h1>
+    <p class="subtitle">100% autonome - Les bots acceptent et jouent automatiquement contre les vrais joueurs</p>
+
+    <div class="status-bar" id="statusBar">
+        <div>
+            <span class="status-dot"></span>
+            <span class="status-info" id="statusText">Demarrage...</span>
+        </div>
+        <div class="status-stats" id="statusStats"></div>
+    </div>
+
+    <div class="controls">
+        <div>
+            <label>Difficulte :</label>
+            <select id="difficulty">
+                <option value="easy">Facile</option>
+                <option value="medium" selected>Moyen</option>
+                <option value="hard">Difficile</option>
+            </select>
+        </div>
+        <div>
+            <label>Vitesse :</label>
+            <input type="range" id="speed" min="1" max="5" value="3">
+            <span id="speedLabel" style="font-size:11px;color:#aaa;">Normal</span>
+        </div>
+        <div style="margin-left:auto;">
+            <button class="btn-stop" id="btnToggle" onclick="toggleBots()">Pause</button>
+        </div>
+    </div>
+
+    <div class="bot-dashboard" id="botDashboard"></div>
+    <div class="log-section" id="logSection"></div>
+
+    <script>
+    const SUPABASE_URL = 'https://icujwpwicsmyuyidubqf.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljdWp3cHdpY3NteXV5aWR1YnFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMTk5NjEsImV4cCI6MjA4NTY5NTk2MX0.PddUsHjUcHaJfeDciB8BYAVE50oNWG9AwkLLYjMFUl4';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const GRID_SIZE = 8;
+    const MASK64 = (1n << 64n) - 1n;
+    const POW2_32 = 1n << 32n;
+
+    // === DART RANDOM PORT (identique au SDK Dart) ===
+    class DartRandom {
+        constructor(seed) {
+            this._state = DartRandom._setupSeed(BigInt(seed));
+            this._nextState(); this._nextState(); this._nextState(); this._nextState();
+        }
+        static _setupSeed(seed) {
+            let n = seed & MASK64;
+            n = ((MASK64 ^ n) + (n << 21n)) & MASK64;
+            n = n ^ (n >> 24n);
+            n = (n * 265n) & MASK64;
+            n = n ^ (n >> 14n);
+            n = (n * 21n) & MASK64;
+            n = n ^ (n >> 28n);
+            n = (n + (n << 31n)) & MASK64;
+            if (n === 0n) n = 0x5a17n;
+            return n;
+        }
+        _nextState() {
+            const A = 0xffffda61n;
+            const lo = this._state & 0xFFFFFFFFn;
+            const hi = this._state >> 32n;
+            this._state = A * lo + hi;
+        }
+        nextInt(max) {
+            const bigMax = BigInt(max);
+            if ((bigMax & (-bigMax)) === bigMax) {
+                this._nextState();
+                return Number((this._state & 0xFFFFFFFFn) & (bigMax - 1n));
+            }
+            let rnd32, result;
+            do {
+                this._nextState();
+                rnd32 = this._state & 0xFFFFFFFFn;
+                result = rnd32 % bigMax;
+            } while ((rnd32 - result + bigMax) > POW2_32);
+            return Number(result);
+        }
+    }
+
+    // === PIECES CATALOG (48 pieces, identique Flutter PiecesCatalog.main) ===
+    const CATALOG = [
+        {b:[[0,0]],c:0},{b:[[0,0]],c:0},
+        {b:[[0,0],[1,0],[0,1],[1,1]],c:0},{b:[[0,0],[1,0],[0,1],[1,1]],c:0},
+        {b:[[0,0],[1,0]],c:1},{b:[[0,0],[1,0]],c:1},
+        {b:[[0,0],[0,1]],c:1},{b:[[0,0],[0,1]],c:1},
+        {b:[[0,0],[1,0],[2,0]],c:2},{b:[[0,0],[1,0],[2,0]],c:2},
+        {b:[[0,0],[0,1],[0,2]],c:2},{b:[[0,0],[0,1],[0,2]],c:2},
+        {b:[[0,0],[1,0],[2,0],[3,0]],c:2},{b:[[0,0],[1,0],[2,0],[3,0]],c:2},
+        {b:[[0,0],[0,1],[0,2],[0,3]],c:2},{b:[[0,0],[0,1],[0,2],[0,3]],c:2},
+        {b:[[0,0],[1,0],[2,0],[3,0],[4,0]],c:2},{b:[[0,0],[1,0],[2,0],[3,0],[4,0]],c:2},
+        {b:[[0,0],[0,1],[0,2],[0,3],[0,4]],c:2},{b:[[0,0],[0,1],[0,2],[0,3],[0,4]],c:2},
+        {b:[[0,0],[0,1],[1,1]],c:3},{b:[[0,0],[1,0],[0,1]],c:3},
+        {b:[[0,0],[1,0],[1,1]],c:3},{b:[[1,0],[0,1],[1,1]],c:3},
+        {b:[[0,0],[0,1],[0,2],[1,2]],c:3},{b:[[0,0],[1,0],[2,0],[0,1]],c:3},
+        {b:[[0,0],[1,0],[1,1],[1,2]],c:3},{b:[[2,0],[0,1],[1,1],[2,1]],c:3},
+        {b:[[1,0],[1,1],[0,2],[1,2]],c:1},{b:[[0,0],[0,1],[1,1],[2,1]],c:1},
+        {b:[[0,0],[1,0],[0,1],[0,2]],c:1},{b:[[0,0],[1,0],[2,0],[2,1]],c:1},
+        {b:[[0,0],[1,0],[2,0],[1,1]],c:4},{b:[[0,0],[0,1],[1,1],[0,2]],c:4},
+        {b:[[1,0],[0,1],[1,1],[2,1]],c:4},{b:[[1,0],[0,1],[1,1],[1,2]],c:4},
+        {b:[[1,0],[2,0],[0,1],[1,1]],c:5},{b:[[1,0],[2,0],[0,1],[1,1]],c:5},
+        {b:[[0,0],[0,1],[1,1],[1,2]],c:5},{b:[[0,0],[0,1],[1,1],[1,2]],c:5},
+        {b:[[0,0],[1,0],[1,1],[2,1]],c:6},{b:[[0,0],[1,0],[1,1],[2,1]],c:6},
+        {b:[[1,0],[0,1],[1,1],[0,2]],c:6},{b:[[1,0],[0,1],[1,1],[0,2]],c:6},
+        {b:[[0,0],[1,0],[0,1],[1,1],[0,2],[1,2]],c:3},{b:[[0,0],[1,0],[0,1],[1,1],[0,2],[1,2]],c:3},
+        {b:[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]],c:3},{b:[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]],c:3},
+    ];
+
+    // === ETAT GLOBAL ===
+    let botsActive = false;
+    let pollTimer = null;
+    let heartbeatTimer = null;
+    let activeBotGames = {};  // botId -> game state
+    let allBots = [];         // tous les faux profils
+    let totalGamesPlayed = 0;
+    let totalWins = 0;
+
+    // Difficulty settings
+    const DIFFICULTY = {
+        easy:   { errorRate: 0.45, randomNoise: 40 },
+        medium: { errorRate: 0.20, randomNoise: 20 },
+        hard:   { errorRate: 0.06, randomNoise: 8 },
+    };
+
+    function getDelay() {
+        const speed = parseInt(document.getElementById('speed').value);
+        return [5000, 3500, 2500, 1500, 800][speed - 1];
+    }
+
+    document.getElementById('speed').addEventListener('input', (e) => {
+        const labels = ['Tres lent', 'Lent', 'Normal', 'Rapide', 'Tres rapide'];
+        document.getElementById('speedLabel').textContent = labels[e.target.value - 1];
+    });
+
+    // === LOGGING ===
+    function log(msg, cls = '') {
+        const div = document.getElementById('logSection');
+        const time = new Date().toLocaleTimeString();
+        div.innerHTML += `<div class="log-entry ${cls}">[${time}] ${msg}</div>`;
+        div.scrollTop = div.scrollHeight;
+        // Limiter a 200 lignes
+        while (div.children.length > 200) div.removeChild(div.firstChild);
+    }
+
+    // === DEMARRAGE AUTOMATIQUE ===
+    window.addEventListener('DOMContentLoaded', async () => {
+        log('Chargement des faux profils...', 'important');
+        await loadBots();
+        if (allBots.length > 0) {
+            startAllBots();
+        } else {
+            log('Aucun faux profil trouve dans la base!', 'error');
+            updateStatus();
+        }
+    });
+
+    async function loadBots() {
+        const { data } = await sb.from('players').select('id, username, device_id, photo_url').order('username');
+        allBots = data?.filter(p => p.device_id?.startsWith('fake_')) || [];
+        log(`${allBots.length} faux profil(s) charge(s)`, 'success');
+    }
+
+    function startAllBots() {
+        botsActive = true;
+        log(`Demarrage de ${allBots.length} bot(s)...`, 'important');
+
+        // Mettre tous les bots en ligne immediatement
+        allBots.forEach(async bot => {
+            await sb.from('players').update({ last_seen_at: new Date().toISOString() }).eq('id', bot.id);
+        });
+
+        // Polling pour les duels toutes les 5 secondes
+        pollForDuels();
+        pollTimer = setInterval(pollForDuels, 5000);
+
+        // Heartbeat: garder tous les bots en ligne toutes les 10 secondes
+        heartbeatTimer = setInterval(() => {
+            if (!botsActive) return;
+            const now = new Date().toISOString();
+            allBots.forEach(async bot => {
+                await sb.from('players').update({ last_seen_at: now }).eq('id', bot.id);
+            });
+        }, 10000);
+
+        updateStatus();
+        renderDashboard();
+    }
+
+    function toggleBots() {
+        if (botsActive) {
+            // Pause
+            botsActive = false;
+            clearInterval(pollTimer);
+            clearInterval(heartbeatTimer);
+
+            // Cleanup channels actifs
+            Object.values(activeBotGames).forEach(game => {
+                game.gameActive = false;
+                if (game.channel) sb.removeChannel(game.channel);
+            });
+            activeBotGames = {};
+
+            document.getElementById('btnToggle').textContent = 'Reprendre';
+            document.getElementById('btnToggle').className = 'btn-start';
+            log('Bots en pause', 'error');
+        } else {
+            // Reprendre
+            document.getElementById('btnToggle').textContent = 'Pause';
+            document.getElementById('btnToggle').className = 'btn-stop';
+            startAllBots();
+        }
+        updateStatus();
+        renderDashboard();
+    }
+
+    function updateStatus() {
+        const bar = document.getElementById('statusBar');
+        const text = document.getElementById('statusText');
+        const stats = document.getElementById('statusStats');
+
+        const activeGames = Object.keys(activeBotGames).length;
+
+        if (botsActive) {
+            bar.className = 'status-bar';
+            text.textContent = `${allBots.length} bot(s) actif(s) - ${activeGames} partie(s) en cours`;
+        } else {
+            bar.className = 'status-bar offline';
+            text.textContent = 'Bots en pause';
+        }
+        stats.textContent = `Parties jouees: ${totalGamesPlayed} | Victoires: ${totalWins}`;
+    }
+
+    // === POLLING AUTOMATIQUE ===
+    async function pollForDuels() {
+        if (!botsActive) return;
+
+        const botIds = allBots.map(b => b.id);
+
+        for (const botId of botIds) {
+            if (activeBotGames[botId]) continue; // Deja en partie
+
+            try {
+                // Chercher les duels pending ou live pour ce bot
+                const { data } = await sb.from('duels')
+                    .select('*')
+                    .or(`challenger_id.eq.${botId},challenged_id.eq.${botId}`)
+                    .in('status', ['pending', 'live'])
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                if (data && data.length > 0) {
+                    const duel = data[0];
+
+                    // Verifier que c'est bien un duel qui attend ce bot
+                    // Si le bot est le challenger et le duel est pending, c'est le bot qui a lance le defi (ignorer)
+                    // Si le bot est le challenged et le duel est pending, il doit accepter
+                    // Si le duel est live, le bot doit rejoindre
+                    const isChallenged = duel.challenged_id === botId;
+                    const isChallenger = duel.challenger_id === botId;
+
+                    if (duel.status === 'pending' && isChallenged) {
+                        // Le bot a recu un defi -> accepter automatiquement
+                        const botName = allBots.find(b => b.id === botId)?.username || 'Bot';
+                        log(`${botName}: Defi recu! Acceptation automatique...`, 'important');
+                        await acceptAndPlay(botId, duel);
+                    } else if (duel.status === 'live') {
+                        // Duel deja accepte, rejoindre le channel
+                        const botName = allBots.find(b => b.id === botId)?.username || 'Bot';
+                        log(`${botName}: Duel live trouve, connexion...`, 'important');
+                        await joinAndPlay(botId, duel);
+                    }
+                }
+            } catch (e) {
+                // Silencieux, on reessaiera au prochain poll
+            }
+        }
+
+        updateStatus();
+    }
+
+    // === ACCEPTER UN DUEL ===
+    async function acceptAndPlay(botId, duel) {
+        // Mettre le duel en mode live
+        await sb.from('duels').update({ status: 'live' }).eq('id', duel.id);
+
+        const botName = allBots.find(b => b.id === botId)?.username || 'Bot';
+        log(`${botName}: Duel accepte en mode LIVE`, 'success');
+
+        // Rejoindre et jouer
+        await joinAndPlay(botId, duel);
+    }
+
+    // === REJOINDRE ET JOUER ===
+    async function joinAndPlay(botId, duel) {
+        const botInfo = allBots.find(b => b.id === botId);
+        const botName = botInfo?.username || 'Bot';
+        const opponentId = duel.challenger_id === botId ? duel.challenged_id : duel.challenger_id;
+
+        // Init game state
+        const game = {
+            botId,
+            botName,
+            duelId: duel.id,
+            seed: duel.seed,
+            grid: Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(-1)),
+            score: 0,
+            pieces: [null, null, null],
+            rng: new DartRandom(duel.seed),
+            channel: null,
+            gameActive: true,
+            opponentId,
+            opponentScore: 0,
+            opponentFinished: false,
+            status: 'connecting',
+            piecesPlaced: 0,
+            startTime: null,
+        };
+
+        activeBotGames[botId] = game;
+        renderDashboard();
+
+        // Generer les premieres pieces
+        generateBotPieces(game);
+
+        // Rejoindre le channel realtime
+        game.channel = sb.channel(`duel:${duel.id}`, { config: { self: true } });
+
+        // Ecouter les broadcasts
+        game.channel.on('broadcast', { event: 'score_update' }, (payload) => {
+            const data = payload.payload || payload;
+            if (data.player_id !== botId) {
+                game.opponentScore = data.score || 0;
+                renderDashboard();
+            }
+        });
+
+        game.channel.on('broadcast', { event: 'game_over' }, (payload) => {
+            const data = payload.payload || payload;
+            if (data.player_id !== botId) {
+                game.opponentScore = data.score || 0;
+                game.opponentFinished = true;
+                log(`${botName}: Adversaire a fini avec ${game.opponentScore}`, 'important');
+            }
+        });
+
+        game.channel.on('broadcast', { event: 'countdown_start' }, () => {
+            // Le countdown est lance par l'adversaire ou par nous
+        });
+
+        game.channel.on('presence', { event: 'sync' }, () => {
+            // Presence sync - on verifie si l'adversaire est la
+            const presences = game.channel.presenceState();
+            let opponentPresent = false;
+            for (const key of Object.keys(presences)) {
+                for (const p of presences[key]) {
+                    if (p.player_id === game.opponentId) opponentPresent = true;
+                }
+            }
+
+            if (opponentPresent && game.status === 'waiting') {
+                game.status = 'ready';
+                log(`${botName}: Adversaire connecte! Countdown...`, 'success');
+
+                // Leader election: le plus petit ID lance le countdown
+                if (botId.localeCompare(game.opponentId) < 0) {
+                    setTimeout(() => {
+                        if (game.status === 'ready') {
+                            game.channel?.send({
+                                type: 'broadcast', event: 'countdown_start',
+                                payload: { leader: botId }
+                            });
+                        }
+                    }, 1000);
+                }
+
+                // Commencer a jouer apres le countdown (5s) + marge
+                setTimeout(() => {
+                    if (game.gameActive && game.status !== 'playing') {
+                        game.status = 'playing';
+                        game.startTime = Date.now();
+                        log(`${botName}: GO! Debut de la partie`, 'success');
+                        botPlayLoop(game);
+                    }
+                }, 7000);
+            }
+        });
+
+        game.channel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                // Tracker la presence du bot
+                game.channel.track({ player_id: botId, status: 'ready' });
+                game.status = 'waiting';
+                log(`${botName}: Connecte au channel, en attente de l'adversaire...`);
+
+                // Heartbeat realtime
+                const hbInterval = setInterval(() => {
+                    if (!game.gameActive) { clearInterval(hbInterval); return; }
+                    game.channel?.send({
+                        type: 'broadcast', event: 'heartbeat',
+                        payload: { player_id: botId }
+                    });
+                }, 3000);
+
+                // Timeout: si personne ne rejoint apres 90s, abandonner
+                setTimeout(() => {
+                    if (game.status === 'waiting' && game.gameActive) {
+                        log(`${botName}: Timeout - personne n'a rejoint`, 'error');
+                        cleanupGame(game);
+                    }
+                }, 90000);
+
+                renderDashboard();
+            }
+        });
+    }
+
+    // === GENERATION DE PIECES (identique Flutter) ===
+    function shuffleList(list, rng) {
+        for (let i = list.length - 1; i > 0; i--) {
+            const j = rng.nextInt(i + 1);
+            [list[i], list[j]] = [list[j], list[i]];
+        }
+    }
+
+    function generateBotPieces(game) {
+        const allPieces = CATALOG.map(p => ({ blocks: p.b.map(b => [...b]), color: p.c }));
+        shuffleList(allPieces, game.rng);
+
+        let emptyCells = 0;
+        for (let y = 0; y < GRID_SIZE; y++)
+            for (let x = 0; x < GRID_SIZE; x++)
+                if (game.grid[y][x] < 0) emptyCells++;
+
+        if (emptyCells > 50) {
+            game.pieces = [allPieces[0], allPieces[1], allPieces[2]];
+            return;
+        }
+
+        const playable = allPieces.filter(p => canPlaceAnywhere(p, game.grid));
+        if (playable.length < 3) {
+            const small = allPieces.filter(p => p.blocks.length <= 2);
+            shuffleList(small, game.rng);
+            for (const p of small) {
+                if (!playable.includes(p)) { playable.push(p); if (playable.length >= 3) break; }
+            }
+        }
+        shuffleList(playable, game.rng);
+
+        game.pieces = [
+            playable[0] || allPieces[0],
+            playable[1] || allPieces[1],
+            playable[2] || allPieces[2],
+        ];
+    }
+
+    function canPlace(piece, gx, gy, grid) {
+        return piece.blocks.every(([bx, by]) => {
+            const cx = gx + bx, cy = gy + by;
+            return cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE && grid[cy][cx] < 0;
+        });
+    }
+
+    function canPlaceAnywhere(piece, grid) {
+        for (let y = 0; y < GRID_SIZE; y++)
+            for (let x = 0; x < GRID_SIZE; x++)
+                if (canPlace(piece, x, y, grid)) return true;
+        return false;
+    }
+
+    // === BOT AI ===
+    function evaluatePlacement(piece, gx, gy, grid) {
+        let score = 0;
+        const temp = grid.map(r => [...r]);
+
+        // Placer la piece
+        piece.blocks.forEach(([bx, by]) => { temp[gy + by][gx + bx] = piece.color; });
+
+        // Lignes/colonnes completees = gros bonus
+        let lines = 0;
+        for (let y = 0; y < GRID_SIZE; y++) if (temp[y].every(c => c >= 0)) lines++;
+        for (let x = 0; x < GRID_SIZE; x++) if (temp.every(r => r[x] >= 0)) lines++;
+        score += lines * 200;
+
+        // Progression vers des lignes
+        const touchedRows = new Set();
+        const touchedCols = new Set();
+        piece.blocks.forEach(([bx, by]) => { touchedRows.add(gy + by); touchedCols.add(gx + bx); });
+
+        touchedRows.forEach(y => {
+            let filled = 0;
+            for (let x = 0; x < GRID_SIZE; x++) if (temp[y][x] >= 0) filled++;
+            score += filled * 3;
+            if (filled >= 7) score += 30;
+        });
+        touchedCols.forEach(x => {
+            let filled = 0;
+            for (let y = 0; y < GRID_SIZE; y++) if (temp[y][x] >= 0) filled++;
+            score += filled * 3;
+            if (filled >= 7) score += 30;
+        });
+
+        // Compacite: adjacence avec blocs existants
+        piece.blocks.forEach(([bx, by]) => {
+            const cx = gx + bx, cy = gy + by;
+            [[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]].forEach(([nx, ny]) => {
+                if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE && grid[ny][nx] >= 0) {
+                    score += 4;
+                }
+            });
+        });
+
+        // Preference pour les bords
+        piece.blocks.forEach(([bx, by]) => {
+            if (gx + bx === 0 || gx + bx === 7) score += 2;
+            if (gy + by === 0 || gy + by === 7) score += 2;
+        });
+
+        return score;
+    }
+
+    function findBestPlacement(piece, grid, difficulty) {
+        const placements = [];
+
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                if (canPlace(piece, x, y, grid)) {
+                    let score = evaluatePlacement(piece, x, y, grid);
+                    score += Math.random() * difficulty.randomNoise;
+                    placements.push({ x, y, score });
+                }
+            }
+        }
+
+        if (placements.length === 0) return null;
+
+        // Erreur humaine
+        if (Math.random() < difficulty.errorRate) {
+            return placements[Math.floor(Math.random() * placements.length)];
+        }
+
+        placements.sort((a, b) => b.score - a.score);
+        return placements[0];
+    }
+
+    function placePiece(game, pieceIdx, gx, gy) {
+        const piece = game.pieces[pieceIdx];
+        piece.blocks.forEach(([bx, by]) => {
+            game.grid[gy + by][gx + bx] = piece.color;
+        });
+        game.pieces[pieceIdx] = null;
+        game.piecesPlaced++;
+
+        // Clear lignes completees
+        let cleared = 0;
+        const rowsToClear = [];
+        const colsToClear = [];
+
+        for (let y = 0; y < GRID_SIZE; y++) {
+            if (game.grid[y].every(c => c >= 0)) rowsToClear.push(y);
+        }
+        for (let x = 0; x < GRID_SIZE; x++) {
+            if (game.grid.every(r => r[x] >= 0)) colsToClear.push(x);
+        }
+
+        // Effacer les lignes
+        rowsToClear.forEach(y => {
+            for (let x = 0; x < GRID_SIZE; x++) game.grid[y][x] = -1;
+            cleared++;
+        });
+        colsToClear.forEach(x => {
+            for (let y = 0; y < GRID_SIZE; y++) game.grid[y][x] = -1;
+            cleared++;
+        });
+
+        if (cleared > 0) {
+            game.score += cleared * 80 + (cleared > 1 ? cleared * 50 : 0);
+        }
+    }
+
+    // === BOT PLAY LOOP ===
+    async function botPlayLoop(game) {
+        if (!game.gameActive || !botsActive) return;
+
+        const diff = DIFFICULTY[document.getElementById('difficulty').value];
+
+        // Trouver la meilleure piece parmi les 3
+        let bestPieceIdx = -1;
+        let bestPlacement = null;
+        let bestScore = -1;
+
+        for (let i = 0; i < 3; i++) {
+            if (!game.pieces[i]) continue;
+            const placement = findBestPlacement(game.pieces[i], game.grid, diff);
+            if (placement && placement.score > bestScore) {
+                bestScore = placement.score;
+                bestPlacement = placement;
+                bestPieceIdx = i;
+            }
+        }
+
+        if (bestPieceIdx < 0 || !bestPlacement) {
+            // GAME OVER
+            await endBotGame(game);
+            return;
+        }
+
+        // Placer la piece
+        placePiece(game, bestPieceIdx, bestPlacement.x, bestPlacement.y);
+
+        // Broadcast score
+        game.channel?.send({
+            type: 'broadcast', event: 'score_update',
+            payload: { player_id: game.botId, score: game.score }
+        });
+
+        // Si les 3 pieces sont posees, en generer de nouvelles
+        if (game.pieces.every(p => p === null)) {
+            generateBotPieces(game);
+        }
+
+        renderDashboard();
+
+        // Prochain coup avec delai (reflexion humaine)
+        const baseDelay = getDelay();
+        const variation = baseDelay * 0.4;
+        const delay = baseDelay + (Math.random() * variation * 2 - variation);
+
+        setTimeout(() => botPlayLoop(game), delay);
+    }
+
+    async function endBotGame(game) {
+        game.gameActive = false;
+        game.status = 'finished';
+
+        const timeSeconds = game.startTime ? Math.round((Date.now() - game.startTime) / 1000) : game.piecesPlaced * 3;
+
+        log(`${game.botName}: GAME OVER - Score: ${game.score} en ${timeSeconds}s`, 'important');
+
+        // Broadcast game over
+        game.channel?.send({
+            type: 'broadcast', event: 'game_over',
+            payload: { player_id: game.botId, score: game.score, time: timeSeconds }
+        });
+
+        // Soumettre le score a la DB
+        await submitBotScore(game, timeSeconds);
+
+        totalGamesPlayed++;
+
+        // Cleanup apres 5 secondes
+        setTimeout(() => cleanupGame(game), 5000);
+
+        renderDashboard();
+        updateStatus();
+    }
+
+    async function submitBotScore(game, timeSeconds) {
+        try {
+            const { data: duel } = await sb.from('duels').select('*').eq('id', game.duelId).single();
+            if (!duel) return;
+
+            const isChallenger = duel.challenger_id === game.botId;
+            const scoreField = isChallenger ? 'challenger_score' : 'challenged_score';
+            const timeField = isChallenger ? 'challenger_time' : 'challenged_time';
+            const opponentScoreField = isChallenger ? 'challenged_score' : 'challenger_score';
+            const opponentScore = duel[opponentScoreField];
+
+            let updateData = { [scoreField]: game.score, [timeField]: timeSeconds };
+
+            // Si l'adversaire a aussi fini, determiner le gagnant
+            if (opponentScore !== null) {
+                let winnerId = null;
+                if (game.score > opponentScore) {
+                    winnerId = game.botId;
+                    totalWins++;
+                } else if (opponentScore > game.score) {
+                    winnerId = isChallenger ? duel.challenged_id : duel.challenger_id;
+                }
+                updateData.status = 'completed';
+                updateData.winner_id = winnerId;
+            }
+
+            await sb.from('duels').update(updateData).eq('id', game.duelId);
+            log(`${game.botName}: Score ${game.score} soumis`, 'success');
+        } catch (e) {
+            log(`${game.botName}: Erreur soumission: ${e.message}`, 'error');
+        }
+    }
+
+    function cleanupGame(game) {
+        if (game.channel) {
+            try {
+                game.channel.untrack();
+                sb.removeChannel(game.channel);
+            } catch(e) {}
+        }
+        delete activeBotGames[game.botId];
+        renderDashboard();
+        updateStatus();
+    }
+
+    // === DASHBOARD ===
+    function renderDashboard() {
+        const div = document.getElementById('botDashboard');
+        const games = Object.values(activeBotGames);
+
+        if (games.length === 0) {
+            div.innerHTML = botsActive
+                ? '<div style="text-align:center;color:#555;padding:30px;grid-column:1/-1;">En attente de duels... Les bots accepteront automatiquement</div>'
+                : '<div style="text-align:center;color:#555;padding:30px;grid-column:1/-1;">Bots en pause</div>';
+            return;
+        }
+
+        div.innerHTML = games.map(game => {
+            const cardClass = game.status === 'playing' ? 'playing' : game.status === 'finished' ? 'finished' : 'waiting';
+            const badges = {
+                connecting: '<span class="bot-badge badge-idle">Connexion...</span>',
+                waiting: '<span class="bot-badge badge-waiting">En attente</span>',
+                ready: '<span class="bot-badge badge-waiting">Countdown...</span>',
+                playing: '<span class="bot-badge badge-playing">En jeu</span>',
+                finished: '<span class="bot-badge badge-finished">Termine</span>',
+            };
+
+            let miniGrid = '<div class="mini-grid">';
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const c = game.grid[y][x];
+                    miniGrid += `<div class="mini-cell ${c >= 0 ? 'c' + c : ''}"></div>`;
+                }
+            }
+            miniGrid += '</div>';
+
+            return `
+                <div class="bot-card ${cardClass}">
+                    <div class="bot-header">
+                        <span class="bot-name">${game.botName}</span>
+                        ${badges[game.status] || ''}
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <div class="bot-score">${game.score}</div>
+                            <div class="bot-info">Pieces: ${game.piecesPlaced} | Adversaire: ${game.opponentScore}</div>
+                        </div>
+                        ${miniGrid}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    </script>
+</body>
+</html>

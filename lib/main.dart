@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'ui/screens/auth_screen.dart';
 import 'ui/screens/menu_screen.dart';
 import 'services/supabase_service.dart';
@@ -45,15 +46,28 @@ void main() async {
   }
 
   // Vérifier si l'utilisateur est déjà connecté
-  bool isLoggedIn = false;
+  bool hasSession = false;
   try {
     await supabaseService.checkSession();
-    isLoggedIn = supabaseService.isLoggedIn;
+    hasSession = supabaseService.isLoggedIn;
   } catch (e) {
     print('Erreur checkSession: $e');
   }
 
-  runApp(BlockPuzzleApp(isLoggedIn: isLoggedIn));
+  // Vérifier aussi si un joueur anonyme a déjà mis son prénom
+  if (!hasSession) {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedName = prefs.getString('userName');
+      if (savedName != null && savedName.isNotEmpty) {
+        hasSession = true;
+      }
+    } catch (e) {
+      print('Erreur SharedPreferences: $e');
+    }
+  }
+
+  runApp(BlockPuzzleApp(isLoggedIn: hasSession));
 }
 
 class BlockPuzzleApp extends StatelessWidget {

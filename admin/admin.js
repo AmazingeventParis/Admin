@@ -371,16 +371,42 @@ async function editScore(playerId, currentScore) {
 
 // Supprimer un utilisateur
 async function deleteUser(userId) {
-    if (!confirm('Supprimer ce profil ?')) return;
+    if (!confirm('Supprimer ce profil et toutes ses données ?')) return;
 
     try {
-        // Supprimer d'abord les stats
+        // Supprimer toutes les données liées avant le joueur
+
+        // 1. Messages envoyés et reçus
+        await supabaseClient
+            .from('messages')
+            .delete()
+            .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+
+        // 2. Statut de frappe
+        await supabaseClient
+            .from('typing_status')
+            .delete()
+            .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+
+        // 3. Duels (challenger ou challenged)
+        await supabaseClient
+            .from('duels')
+            .delete()
+            .or(`challenger_id.eq.${userId},challenged_id.eq.${userId}`);
+
+        // 4. Amis (dans les deux sens)
+        await supabaseClient
+            .from('friends')
+            .delete()
+            .or(`player_id.eq.${userId},friend_id.eq.${userId}`);
+
+        // 5. Stats
         await supabaseClient
             .from('player_stats')
             .delete()
             .eq('player_id', userId);
 
-        // Puis le joueur
+        // 6. Enfin le joueur
         const { error } = await supabaseClient
             .from('players')
             .delete()
@@ -394,7 +420,7 @@ async function deleteUser(userId) {
 
     } catch (error) {
         console.error('Erreur suppression:', error);
-        showToast('Erreur de suppression', 'error');
+        showToast('Erreur de suppression: ' + error.message, 'error');
     }
 }
 

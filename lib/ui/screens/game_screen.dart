@@ -14,6 +14,7 @@ import '../../services/screen_shake_service.dart';
 import '../../services/duel_service.dart';
 import '../../services/friend_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/realtime_duel_service.dart';
 import '../../logic/seeded_piece_generator.dart';
 import '../widgets/cell_widget.dart';
 import '../widgets/piece_widget.dart';
@@ -21,7 +22,8 @@ import '../widgets/particle_effect.dart';
 import '../widgets/block_widget.dart';
 import '../widgets/jelly_bomb_widget.dart';
 import '../widgets/candy_ui.dart';
-import '../widgets/sugar_rush_widget.dart';
+// Sugar Rush désactivé - backup dans sugar_rush_widget_BACKUP.dart
+// import '../widgets/sugar_rush_widget.dart';
 import 'profile_screen.dart';
 
 class GameScreen extends StatefulWidget {
@@ -30,6 +32,8 @@ class GameScreen extends StatefulWidget {
   final String? opponentId;  // ID de l'adversaire
   final String? opponentName;  // Nom de l'adversaire
   final String? opponentPhotoUrl;  // Photo de l'adversaire
+  final RealtimeDuelService? realtimeDuelService;  // Service temps réel (null = async)
+  final bool isBotDuel;  // true = adversaire est un bot simulé localement
 
   const GameScreen({
     super.key,
@@ -38,6 +42,8 @@ class GameScreen extends StatefulWidget {
     this.opponentId,
     this.opponentName,
     this.opponentPhotoUrl,
+    this.realtimeDuelService,
+    this.isBotDuel = false,
   });
 
   @override
@@ -80,6 +86,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   // Pour l'aperçu (ghost)
   Piece? _draggingPiece;
   int _draggingIndex = -1;
+  Offset? _dragStartPosition;  // Position de départ du drag
+  static const double _dragSensitivity = 1.5;  // Multiplicateur de sensibilité (1.5 = 50% plus rapide)
   int? _previewX;
   int? _previewY;
   bool _canPlacePreview = false;
@@ -118,8 +126,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   // Blocs qui tombent (overlay)
   List<_FallingBlock> _fallingBlocks = [];
 
-  // Pour le système de combo
-  int _comboCount = 0;
+  // Pour le système de combo chaîne
+  int _comboCount = 0;  // Nombre de lignes consécutives
+  bool _lastMoveWasLine = false;  // Pour savoir si on doit reset
+  bool _showComboText = false;  // Afficher le texte combo
   AnimationController? _comboAnimController;
   Animation<double>? _comboScaleAnimation;
   Animation<double>? _comboOpacityAnimation;
@@ -148,25 +158,45 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   List<_FloatingScore> _floatingScores = [];
   int _floatingScoreIdCounter = 0;
 
-  // Sugar Rush system
-  double _sugarRushProgress = 0.0; // 0.0 à 1.0
-  bool _isSugarRushActive = false;
-  double _sugarRushRemainingTime = 0.0;
-  static const double _sugarRushDuration = 10.0; // 10 secondes
-  static const int _sugarRushMultiplier = 5; // x5 pendant Sugar Rush
-  DateTime? _lastActionTime; // Pour la décroissance
-  bool _showSugarRushOverlay = false;
-  int _sugarRushOverlayId = 0; // ID unique pour chaque overlay
-  DateTime? _lastSugarRushEnd; // Cooldown entre Sugar Rush
-
-  // Particules d'énergie vers la jauge
-  List<_EnergyParticle> _energyParticles = [];
-  int _energyParticleIdCounter = 0;
-  final GlobalKey _sugarGaugeKey = GlobalKey();
+  // Sugar Rush system - DÉSACTIVÉ
+  // double _sugarRushProgress = 0.0;
+  // bool _isSugarRushActive = false;
+  // double _sugarRushRemainingTime = 0.0;
+  // static const double _sugarRushDuration = 10.0;
+  // static const int _sugarRushMultiplier = 5;
+  // DateTime? _lastActionTime;
+  // bool _showSugarRushOverlay = false;
+  // int _sugarRushOverlayId = 0;
+  // DateTime? _lastSugarRushEnd;
+  // List<_EnergyParticle> _energyParticles = [];
+  // int _energyParticleIdCounter = 0;
+  // final GlobalKey _sugarGaugeKey = GlobalKey();
 
   // Timer pour les notifications de duels (même en jeu)
   Timer? _duelNotificationTimer;
   int _lastPendingDuelsCount = 0;
+
+  // Duel temps réel
+  RealtimeDuelService? _realtimeService;
+  bool _isRealtimeDuel = false;
+  int _realtimeOpponentScore = 0;
+  bool _realtimeOpponentGameOver = false;
+  bool _showCountdown = false;
+  int _countdownValue = 5;
+  bool _gameStarted = true;  // true par défaut, false pendant countdown
+  bool _waitingForOpponentResult = false;
+
+  // Bot simulation (quand isBotDuel = true)
+  bool _isBotDuel = false;
+  Timer? _botScoreTimer;
+  int _botFinalScore = 0;       // Score final prédéterminé du bot
+  int _botDuration = 0;         // Durée de jeu du bot en secondes
+  int _botCurrentScore = 0;     // Score actuel affiché du bot
+  DateTime? _botStartTime;      // Quand le bot a "commencé"
+  bool _botFinished = false;    // Le bot a fini sa partie
+  bool _botWillLose = false;    // Le bot va perdre (game over avant le joueur)
+  int _botGameOverTime = 0;     // Quand le bot aura son game over (secondes)
+  List<_BotScoreBurst> _botScoreBursts = [];  // Liste de "lignes" simulées
 
   @override
   void initState() {
@@ -186,15 +216,86 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _pieceGenerator = SeededPieceGenerator(widget.duelSeed!);
     }
 
+    // Initialiser le mode duel temps réel
+    if (widget.realtimeDuelService != null) {
+      _realtimeService = widget.realtimeDuelService;
+      _isRealtimeDuel = true;
+
+      // Vérifier l'état actuel du service
+      if (_realtimeService!.state == RealtimeDuelState.playing) {
+        // Countdown déjà terminé, démarrer directement
+        _gameStarted = true;
+        _showCountdown = false;
+      } else {
+        // En attente du countdown (bothReady ou countdown)
+        _gameStarted = false;
+        _showCountdown = true;
+        _countdownValue = -1; // -1 = afficher "PRÊT" avant le vrai countdown
+      }
+
+      _realtimeService!.onOpponentScoreUpdate = (score) {
+        if (mounted) setState(() => _realtimeOpponentScore = score);
+      };
+
+      _realtimeService!.onOpponentGameOver = (finalScore, timeSeconds) {
+        if (mounted) {
+          setState(() {
+            _realtimeOpponentScore = finalScore;
+            _realtimeOpponentGameOver = true;
+          });
+          if (_isGameOver) {
+            _showRealtimeDuelResult(finalScore, timeSeconds);
+          }
+        }
+      };
+
+      _realtimeService!.onStateChange = (newState) {
+        if (mounted) {
+          if (newState == RealtimeDuelState.playing) {
+            // Countdown terminé, GO!
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                setState(() {
+                  _showCountdown = false;
+                  _gameStarted = true;
+                });
+              }
+            });
+          } else if (newState == RealtimeDuelState.opponentLeft && !_isGameOver) {
+            _handleOpponentDisconnect();
+          }
+        }
+      };
+
+      _realtimeService!.onCountdownTick = (remaining) {
+        if (mounted) {
+          setState(() => _countdownValue = remaining);
+        }
+      };
+    }
+
+    // Initialiser le mode bot (simulation locale)
+    if (widget.isBotDuel) {
+      _isBotDuel = true;
+      _isRealtimeDuel = true;  // Utilise le même affichage que le temps réel
+      _gameStarted = false;
+      _showCountdown = true;
+      _countdownValue = 5;
+
+      // L'algorithme intelligent est initialisé après _loadUserData (besoin de _highScore)
+      // Lancer le countdown automatiquement
+      _startBotCountdown();
+    }
+
     _gameState = GameState.initial();
     _generateNewPieces();
     _setupAnimations();
     _loadUserData();
     _initStats();
     _startBackgroundMusic();
-    _lastActionTime = DateTime.now();
-    // Démarrer le timer de décroissance Sugar Rush
-    _handleSugarRushDecay();
+    // Sugar Rush désactivé
+    // _lastActionTime = DateTime.now();
+    // _handleSugarRushDecay();
   }
 
   Future<void> _initStats() async {
@@ -297,7 +398,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   }
 
   void _playPlaceSound() {
-    _placePlayer.play(AssetSource('sounds/place.mp4'));
+    _placePlayer.play(AssetSource('sounds/place.mp3'));
   }
 
   void _playComboSound() {
@@ -310,9 +411,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   }
 
   void _setupAnimations() {
-    // Animation de placement
+    // Animation de placement - très rapide pour réactivité
     _placeAnimController = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 50),
       vsync: this,
     );
 
@@ -341,8 +442,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
         _checkAndClearLines();
         // Vérifier game over après un court délai si pas de lignes à effacer
         if (_clearingCells.isEmpty) {
-          // Pas de lignes à effacer, nettoyer les pending
+          // Pas de lignes à effacer = reset du combo
           setState(() {
+            _comboCount = 0;
+            _lastMoveWasLine = false;
             _pendingClearRows.clear();
             _pendingClearColumns.clear();
             _lastPlacedPieceColor = null;
@@ -356,9 +459,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     });
 
-    // Animation de suppression de lignes - cascade très visible
+    // Animation de suppression de lignes - rapide et fluide
     _clearAnimController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
@@ -385,28 +488,36 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
     // Animation du texte combo
     _comboAnimController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
 
     _comboScaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.5), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.5, end: 1.0), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 1.2, end: 0.0), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.3, end: 1.3), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.3, end: 1.0), weight: 15),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 35),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.5), weight: 30),
     ]).animate(CurvedAnimation(
       parent: _comboAnimController!,
       curve: Curves.easeOut,
     ));
 
     _comboOpacityAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 15),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 55),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 30),
     ]).animate(CurvedAnimation(
       parent: _comboAnimController!,
       curve: Curves.easeOut,
     ));
+
+    _comboAnimController!.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _showComboText = false;
+        });
+      }
+    });
 
     // Animation de l'image combo
     _comboImageController = AnimationController(
@@ -489,8 +600,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     }
 
-    // Calculer le combo (nombre de lignes + colonnes)
-    _comboCount = linesToClear.length + columnsToClear.length;
+    // Incrémenter le combo chaîne (lignes consécutives)
+    final linesCleared = linesToClear.length + columnsToClear.length;
+    _comboCount += linesCleared;
+    _lastMoveWasLine = true;
+
+    // Afficher le texte combo si >= 2
+    if (_comboCount >= 2) {
+      _showComboText = true;
+      _comboAnimController?.forward(from: 0.0);
+    }
 
     // Marquer les cellules à effacer et créer les blocs qui tombent
     setState(() {
@@ -660,20 +779,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     });
 
-    // Bonus de score pour les explosions (avec multiplicateur Sugar Rush)
-    final sugarRushMult = _isSugarRushActive ? _sugarRushMultiplier : 1;
-    final explosionScore = cellsToDestroy.length * 15 * sugarRushMult;
-
-    // Bonus Sugar Rush: +25% de la jauge par Jelly Bomb
-    if (!_isSugarRushActive) {
-      _addSugarRushProgress(0.25);
-    }
-
-    // Marquer le temps de la dernière action
-    _lastActionTime = DateTime.now();
+    // Bonus de score pour les explosions
+    final explosionScore = cellsToDestroy.length * 15;
 
     setState(() {
       _score += explosionScore;
+
+      // Broadcast score en temps réel
+      if (_isRealtimeDuel && _realtimeService != null) {
+        _realtimeService!.sendScoreUpdate(_score);
+      }
 
       // Mettre à jour le best score en temps réel
       if (_score > _highScore) {
@@ -708,172 +823,125 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     });
   }
 
-  // ============ SUGAR RUSH SYSTEM ============
-
-  /// Ajoute de la progression à la jauge Sugar Rush (avec lerp automatique)
-  void _addSugarRushProgress(double amount) {
-    // Cooldown de 3 secondes après la fin d'un Sugar Rush
-    if (_lastSugarRushEnd != null) {
-      final cooldown = DateTime.now().difference(_lastSugarRushEnd!).inSeconds;
-      if (cooldown < 3) return;
-    }
-
-    setState(() {
-      _sugarRushProgress = (_sugarRushProgress + amount).clamp(0.0, 1.0);
-    });
-
-    // Vérifier si on atteint 100%
-    if (_sugarRushProgress >= 1.0 && !_isSugarRushActive) {
-      _activateSugarRush();
-    }
-  }
-
-  /// Active le mode Sugar Rush
-  void _activateSugarRush() {
-    // Empêcher la double activation
-    if (_showSugarRushOverlay || _isSugarRushActive) return;
-
-    _sugarRushOverlayId++;
-    setState(() {
-      _isSugarRushActive = true;
-      _sugarRushRemainingTime = _sugarRushDuration;
-      _showSugarRushOverlay = true;
-    });
-
-    // Jouer la musique accélérée (si disponible)
-    // audioService.playFeverMusic();
-
-    // Lancer le timer de Sugar Rush
-    _startSugarRushTimer();
-  }
-
-  /// Timer pour le compte à rebours et la décroissance
-  void _startSugarRushTimer() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!mounted) return;
-
-      if (_isSugarRushActive) {
-        setState(() {
-          _sugarRushRemainingTime -= 0.1;
-
-          if (_sugarRushRemainingTime <= 0) {
-            // Fin du Sugar Rush
-            _isSugarRushActive = false;
-            _sugarRushProgress = 0.0;
-            _sugarRushRemainingTime = 0.0;
-            _lastSugarRushEnd = DateTime.now();
-            // Revenir à la musique normale
-            // audioService.playGameMusic();
-          } else {
-            // Continuer le timer
-            _startSugarRushTimer();
-          }
-        });
-      } else {
-        // Mode inactif: décroissance de la jauge si pas d'action récente
-        _handleSugarRushDecay();
-      }
-    });
-  }
-
-  /// Gère la décroissance de la jauge quand inactif
-  void _handleSugarRushDecay() {
-    if (_isSugarRushActive || _sugarRushProgress <= 0) return;
-
-    final now = DateTime.now();
-    final lastAction = _lastActionTime ?? now;
-    final inactiveSeconds = now.difference(lastAction).inSeconds;
-
-    // Décroissance après 2 secondes d'inactivité
-    if (inactiveSeconds >= 2 && _sugarRushProgress > 0) {
-      setState(() {
-        // Décroissance lente: 5% par seconde
-        _sugarRushProgress = (_sugarRushProgress - 0.005).clamp(0.0, 1.0);
-      });
-    }
-
-    // Continuer à vérifier
-    if (_sugarRushProgress > 0) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) _handleSugarRushDecay();
-      });
-    }
-  }
-
-  /// Appelé quand l'overlay Sugar Rush est terminé
-  void _onSugarRushOverlayComplete() {
-    setState(() {
-      _showSugarRushOverlay = false;
-    });
-  }
-
-  /// Crée des particules d'énergie qui volent vers la jauge Sugar Rush
-  void _spawnEnergyParticlesToGauge(List<String> cellKeys, Color color) {
-    if (_isSugarRushActive) return; // Pas besoin si déjà actif
-
-    final gridBox = _gridKey.currentContext?.findRenderObject() as RenderBox?;
-    final gaugeBox = _sugarGaugeKey.currentContext?.findRenderObject() as RenderBox?;
-
-    if (gridBox == null || gaugeBox == null) return;
-
-    final gridGlobalPosition = gridBox.localToGlobal(Offset.zero);
-    final gaugeGlobalPosition = gaugeBox.localToGlobal(Offset.zero);
-    final gaugeSize = gaugeBox.size;
-
-    // Position cible: centre-droite de la jauge (où l'étoile arrive)
-    final targetX = gaugeGlobalPosition.dx + gaugeSize.width * 0.5;
-    final targetY = gaugeGlobalPosition.dy + gaugeSize.height * 0.5;
-
-    // Créer beaucoup de particules quasi continues depuis les cellules effacées
-    int particleCount = 0;
-    for (final cellKey in cellKeys) {
-      if (particleCount >= 12) break; // Max 12 particules par clear
-
-      final parts = cellKey.split(',');
-      final x = int.parse(parts[0]);
-      final y = int.parse(parts[1]);
-
-      final startX = gridGlobalPosition.dx + (x + 0.5) * _cellSize;
-      final startY = gridGlobalPosition.dy + (y + 0.5) * _cellSize;
-
-      // Délai très court entre particules (quasi continu)
-      Future.delayed(Duration(milliseconds: particleCount * 25), () {
-        if (!mounted) return;
-        setState(() {
-          _energyParticles.add(_EnergyParticle(
-            id: _energyParticleIdCounter++,
-            startPosition: Offset(startX, startY),
-            endPosition: Offset(targetX, targetY),
-            color: color,
-          ));
-        });
-      });
-
-      particleCount++;
-    }
-  }
-
-  /// Supprime une particule d'énergie terminée
-  void _removeEnergyParticle(int id) {
-    setState(() {
-      _energyParticles.removeWhere((p) => p.id == id);
-    });
-  }
+  // ============ SUGAR RUSH SYSTEM - DÉSACTIVÉ ============
+  // Voir sugar_rush_widget_BACKUP.dart pour réactiver
 
   String _getComboText(int combo) {
     switch (combo) {
       case 2:
-        return 'DOUBLE!';
+        return 'COMBO x2';
       case 3:
-        return 'TRIPLE!';
+        return 'COMBO x3';
       case 4:
-        return 'QUAD!';
+        return 'COMBO x4';
       case 5:
-        return 'PENTA!';
+        return 'COMBO x5';
       default:
-        if (combo > 5) return 'MEGA x$combo!';
+        if (combo > 5) return 'COMBO x$combo';
         return '';
     }
+  }
+
+  /// Construit le texte combo style candy
+  Widget _buildComboText() {
+    final text = _getComboText(_comboCount);
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    // Couleurs selon le niveau de combo
+    Color mainColor;
+    Color strokeColor;
+    Color shadowColor;
+
+    if (_comboCount >= 5) {
+      // Mega combo - doré
+      mainColor = const Color(0xFFFFD700);
+      strokeColor = const Color(0xFFB8860B);
+      shadowColor = const Color(0xFFFF8C00);
+    } else if (_comboCount >= 4) {
+      // Quad - violet
+      mainColor = const Color(0xFFFF00FF);
+      strokeColor = const Color(0xFF9932CC);
+      shadowColor = const Color(0xFFE91E63);
+    } else if (_comboCount >= 3) {
+      // Triple - rouge
+      mainColor = const Color(0xFFFF4757);
+      strokeColor = const Color(0xFFAD1457);
+      shadowColor = const Color(0xFFFF1493);
+    } else {
+      // Double - rose
+      mainColor = const Color(0xFFFF69B4);
+      strokeColor = const Color(0xFFE91E63);
+      shadowColor = const Color(0xFFFF1493);
+    }
+
+    return Stack(
+      children: [
+        // Ombre profonde
+        Transform.translate(
+          offset: const Offset(4, 4),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 52,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              color: Colors.black.withOpacity(0.5),
+              letterSpacing: 3,
+            ),
+          ),
+        ),
+        // Contour foncé
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 52,
+            fontWeight: FontWeight.w900,
+            fontStyle: FontStyle.italic,
+            letterSpacing: 3,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 8
+              ..color = strokeColor,
+          ),
+        ),
+        // Dégradé principal
+        ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color.lerp(mainColor, Colors.white, 0.5)!,
+              mainColor,
+              Color.lerp(mainColor, strokeColor, 0.3)!,
+            ],
+          ).createShader(bounds),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 52,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              color: Colors.white,
+              letterSpacing: 3,
+            ),
+          ),
+        ),
+        // Reflet blanc en haut
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 52,
+            fontWeight: FontWeight.w900,
+            fontStyle: FontStyle.italic,
+            letterSpacing: 3,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2
+              ..color = Colors.white.withOpacity(0.6),
+          ),
+        ),
+      ],
+    );
   }
 
   void _spawnClearParticles() {
@@ -922,9 +990,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     // Calculer le score avec bonus combo
     final baseScore = _clearingCells.length * 10;
     final comboMultiplier = _comboCount >= 2 ? (_comboCount * 0.5 + 0.5) : 1.0;
-    // Appliquer le multiplicateur Sugar Rush si actif
-    final sugarRushMult = _isSugarRushActive ? _sugarRushMultiplier : 1;
-    final earnedScore = (baseScore * comboMultiplier * sugarRushMult).round();
+    final earnedScore = (baseScore * comboMultiplier).round();
 
     // Créer le score flottant au centre des cellules effacées
     _createFloatingScore(earnedScore);
@@ -935,22 +1001,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     statsService.addLinesCleared(linesCleared);
     statsService.updateBestCombo(_comboCount);
 
-    // Remplir la jauge Sugar Rush (si pas déjà actif)
-    if (!_isSugarRushActive) {
-      // Chaque ligne = 8% de la jauge
-      final progressGain = linesCleared * 0.08;
-      _addSugarRushProgress(progressGain);
-
-      // Lancer des particules d'énergie vers la jauge
-      final particleColor = _lastPlacedPieceColor ?? Colors.orange;
-      _spawnEnergyParticlesToGauge(_clearingCells.toList(), particleColor);
-    }
-
-    // Marquer le temps de la dernière action
-    _lastActionTime = DateTime.now();
-
     setState(() {
       _score += earnedScore;
+
+      // Broadcast score en temps réel
+      if (_isRealtimeDuel && _realtimeService != null) {
+        _realtimeService!.sendScoreUpdate(_score);
+      }
 
       // Mettre à jour le best score en temps réel
       if (_score > _highScore) {
@@ -969,7 +1026,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _clearingRows.clear();
       _clearingColumns.clear();
       _fallingBlocks.clear();
-      _comboCount = 0;
+      // NE PAS reset le combo ici - il persiste jusqu'à une pièce sans ligne
       _lastPlacedPieceColor = null;
     });
   }
@@ -1088,6 +1145,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   void dispose() {
     // Annuler le timer de notifications
     _duelNotificationTimer?.cancel();
+    _botScoreTimer?.cancel();
+    // Si le bot n'a pas encore fini et que le joueur quitte,
+    // sauvegarder pour soumission différée (le bot "continue à jouer")
+    if (_isBotDuel && !_botFinished && _isGameOver) {
+      _savePendingBotCompletion();
+    }
+    _realtimeService?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _placeAnimController?.dispose();
     _clearAnimController?.dispose();
@@ -1346,7 +1410,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     });
   }
 
-  void _updatePreview(Offset globalPosition, Piece piece) {
+  void _updatePreview(Offset startPosition, Offset currentPosition, Piece piece) {
     if (_draggingPiece == null) return;
 
     final gridBox = _gridKey.currentContext?.findRenderObject() as RenderBox?;
@@ -1368,25 +1432,29 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     // Décalage constant vers le haut (au-dessus du doigt)
     const double fingerOffsetY = 160.0;
 
+    // Appliquer le multiplicateur de sensibilité au déplacement
+    final deltaX = (currentPosition.dx - startPosition.dx) * _dragSensitivity;
+    final deltaY = (currentPosition.dy - startPosition.dy) * _dragSensitivity;
+    final amplifiedPosition = Offset(startPosition.dx + deltaX, startPosition.dy + deltaY);
+
     // Position de la pièce flottante (centrée sur le doigt, décalée vers le haut)
-    final floatingX = globalPosition.dx - pieceCenterX;
-    final floatingY = globalPosition.dy - fingerOffsetY - pieceCenterY;
+    final floatingX = amplifiedPosition.dx - pieceCenterX;
+    final floatingY = amplifiedPosition.dy - fingerOffsetY - pieceCenterY;
     final newFloatingPos = Offset(floatingX, floatingY);
 
     // Position sur la grille - le ghost apparaît juste sous la pièce flottante
     final gridX = ((floatingX - gridPosition.dx + _cellSize * 0.5) / _cellSize).floor();
     final gridY = ((floatingY - gridPosition.dy + _cellSize * 0.5) / _cellSize).floor();
 
-    // Vérifier si on doit mettre à jour
+    // Vérifier si la grille a changé (pour les calculs lourds)
     final gridChanged = _previewX != gridX || _previewY != gridY;
-    final posChanged = _floatingPiecePosition == null ||
-        (_floatingPiecePosition!.dx - newFloatingPos.dx).abs() > 1 ||
-        (_floatingPiecePosition!.dy - newFloatingPos.dy).abs() > 1;
 
-    if (gridChanged || posChanged) {
-      setState(() {
-        _floatingPiecePosition = newFloatingPos;
+    // Toujours mettre à jour la position flottante pour un drag fluide
+    setState(() {
+      _floatingPiecePosition = newFloatingPos;
 
+      // Mettre à jour la grille seulement si elle a changé
+      if (gridChanged) {
         if (gridX >= 0 && gridX < GameState.gridSize &&
             gridY >= 0 && gridY < GameState.gridSize) {
           _previewX = gridX;
@@ -1407,14 +1475,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
           _previewCompletedRows.clear();
           _previewCompletedColumns.clear();
         }
-      });
-    }
+      }
+    });
   }
 
   void _clearPreview() {
     setState(() {
       _draggingPiece = null;
       _draggingIndex = -1;
+      _dragStartPosition = null;
       _previewX = null;
       _previewY = null;
       _canPlacePreview = false;
@@ -1480,15 +1549,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
                 return Stack(
                   children: [
-                    // Mode Duel : Bandeau adversaire + score
+                    // Mode Duel : Bandeau MOI à gauche / ADVERSAIRE à droite
                     if (_isDuelMode) ...[
-                      // Bandeau compact avec adversaire et score
                       Positioned(
                         left: screenWidth * 0.02,
                         right: screenWidth * 0.02,
                         top: screenHeight * 0.005,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
@@ -1508,79 +1576,126 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                           ),
                           child: Row(
                             children: [
-                              // Photo adversaire (cliquable)
-                              GestureDetector(
-                                onTap: () => _showOpponentInfo(),
-                                child: Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: ClipOval(
-                                    child: _duelOpponentPhotoUrl != null
-                                        ? Image.network(
-                                            _duelOpponentPhotoUrl!,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => _buildMiniAvatar(_duelOpponentName),
-                                          )
-                                        : _buildMiniAvatar(_duelOpponentName),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // Nom adversaire
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'DÉFI VS',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                              // === MOI (gauche) : Photo avec prénom dessous + Score ===
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: const Color(0xFFFFD700), width: 2),
                                     ),
-                                    Text(
-                                      _duelOpponentName ?? 'Adversaire',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                                    child: ClipOval(
+                                      child: _googlePhotoUrl != null
+                                          ? Image.network(
+                                              _googlePhotoUrl!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => _buildMiniAvatar(_userName),
+                                            )
+                                          : _buildMiniAvatar(_userName),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _userName.length > 8 ? _userName.substring(0, 8) : _userName,
+                                    style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
-                              // Score
+                              const SizedBox(width: 6),
+                              // Mon score
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: Colors.black26,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
+                                child: Text(
+                                  '$_score',
+                                  style: const TextStyle(color: Color(0xFFFFD700), fontSize: 20, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+
+                              // === CENTRE : VS ===
+                              Expanded(
+                                child: Center(
+                                  child: Text(
+                                    'VS',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              // === ADVERSAIRE (droite) : Score + Photo avec prénom dessous ===
+                              if (_isRealtimeDuel) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$_realtimeOpponentScore',
+                                    style: TextStyle(
+                                      color: _realtimeOpponentGameOver ? const Color(0xFFFF4444) : const Color(0xFFFF6B6B),
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ] else ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'DÉFI',
+                                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(width: 6),
+                              // Photo adversaire + prénom dessous
+                              GestureDetector(
+                                onTap: () => _showOpponentInfo(),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Text(
-                                      'SCORE',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: const Color(0xFFFF6B6B), width: 2),
+                                      ),
+                                      child: ClipOval(
+                                        child: _duelOpponentPhotoUrl != null
+                                            ? Image.network(
+                                                _duelOpponentPhotoUrl!,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => _buildMiniAvatar(_duelOpponentName),
+                                              )
+                                            : _buildMiniAvatar(_duelOpponentName),
                                       ),
                                     ),
+                                    const SizedBox(height: 2),
                                     Text(
-                                      '$_score',
-                                      style: const TextStyle(
-                                        color: Color(0xFFFFD700),
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      () {
+                                        final name = _duelOpponentName ?? 'Adversaire';
+                                        return name.length > 8 ? name.substring(0, 8) : name;
+                                      }(),
+                                      style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -1624,47 +1739,47 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                       ),
                     ],
 
-                    // Jauge Sugar Rush
+                    // Bouton Mute/Unmute musique
                     Positioned(
-                      left: gaugeX,
-                      top: gaugeY,
-                      child: SizedBox(
-                        width: gaugeWidth,
-                        height: gaugeHeight,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.center,
-                          children: [
-                            // Jauge pleine largeur (ne bouge jamais)
-                            Positioned.fill(
-                              child: SugarRushGauge(
-                                key: _sugarGaugeKey,
-                                progress: _sugarRushProgress,
-                                height: gaugeHeight,
-                                onFull: () {},
-                              ),
+                      right: screenWidth * 0.02,
+                      top: scoreY + scoreHeight + 5,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            audioService.toggleMute();
+                          });
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: audioService.isMuted
+                                  ? [Colors.grey.shade600, Colors.grey.shade800]
+                                  : [const Color(0xFFE91E63), const Color(0xFFAD1457)],
                             ),
-                            // Timer à gauche (superposé, aligné au centre)
-                            if (_isSugarRushActive)
-                              Positioned(
-                                left: -gaugeHeight * 1.1,
-                                top: (gaugeHeight - 38) / 2,
-                                child: SugarRushTimer(
-                                  remainingSeconds: _sugarRushRemainingTime,
-                                  totalSeconds: _sugarRushDuration,
-                                ),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
                               ),
-                            // x5 à droite (superposé, aligné au centre)
-                            if (_isSugarRushActive)
-                              Positioned(
-                                right: -gaugeHeight * 1.1,
-                                top: (gaugeHeight - 38) / 2,
-                                child: const SugarRushMultiplier(),
-                              ),
-                          ],
+                            ],
+                          ),
+                          child: Icon(
+                            audioService.isMuted ? Icons.volume_off : Icons.volume_up,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
                       ),
                     ),
+
+                    // Sugar Rush gauge désactivée
 
                     // Plateau de jeu
                     Positioned(
@@ -1918,27 +2033,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
             ),
           )),
 
-          // Particules d'énergie vers la jauge Sugar Rush
-          ..._energyParticles.map((data) => SugarRushEnergyParticle(
-            key: ValueKey('energy_${data.id}'),
-            startPosition: data.startPosition,
-            endPosition: data.endPosition,
-            color: data.color,
-            size: 16,
-            onComplete: () => _removeEnergyParticle(data.id),
-          )),
-
-          // Overlay Sugar Rush
-          if (_showSugarRushOverlay)
+          // Texte Combo animé style Candy
+          if (_showComboText && _comboCount >= 2)
             Positioned.fill(
-              key: ValueKey('sugar_overlay_$_sugarRushOverlayId'),
-              child: SugarRushOverlay(
-                onComplete: _onSugarRushOverlayComplete,
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _comboAnimController!,
+                  builder: (context, child) {
+                    final scale = _comboScaleAnimation?.value ?? 1.0;
+                    final opacity = _comboOpacityAnimation?.value ?? 1.0;
+
+                    return Center(
+                      child: Transform.scale(
+                        scale: scale,
+                        child: Opacity(
+                          opacity: opacity.clamp(0.0, 1.0),
+                          child: _buildComboText(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
 
+          // Countdown overlay pour duel temps réel
+          if (_showCountdown)
+            Positioned.fill(
+              child: _buildCountdownOverlay(),
+            ),
+
+          // Overlay attente adversaire après game over en temps réel
+          if (_isGameOver && _isRealtimeDuel && _waitingForOpponentResult)
+            Positioned.fill(
+              child: _buildWaitingForOpponentOverlay(),
+            ),
+
           // Écran Game Over
-          if (_isGameOver)
+          if (_isGameOver && !_waitingForOpponentResult)
             Positioned.fill(
               child: _buildGameOverScreen(),
             ),
@@ -1970,14 +2102,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
+        if (!_gameStarted) return; // Bloqué pendant le countdown
         setState(() {
           _draggingPiece = piece;
           _draggingIndex = index;
+          _dragStartPosition = details.globalPosition;
         });
-        _updatePreview(details.globalPosition, piece);
+        _updatePreview(details.globalPosition, details.globalPosition, piece);
       },
       onPanUpdate: (details) {
-        _updatePreview(details.globalPosition, piece);
+        _updatePreview(_dragStartPosition!, details.globalPosition, piece);
       },
       onPanEnd: (details) {
         if (_previewX != null && _previewY != null && _canPlacePreview) {
@@ -2723,16 +2857,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _pendingClearColumns.clear();
       _fallingBlocks.clear();
       _activeParticles.clear();
-      _energyParticles.clear();
       _lastPlacedPieceColor = null;
       _sessionStartTime = DateTime.now();
       _sessionLinesCleared = 0;
-      // Reset Sugar Rush
-      _sugarRushProgress = 0.0;
-      _isSugarRushActive = false;
-      _sugarRushRemainingTime = 0.0;
-      _showSugarRushOverlay = false;
-      _lastSugarRushEnd = null;
+      // Reset combo
+      _comboCount = 0;
+      _lastMoveWasLine = false;
+      _showComboText = false;
       // Reset Jelly Bomb
       _activeJellyBombExplosions = [];
       _explodingJellyBombs = {};
@@ -2764,6 +2895,54 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _submitDuelScore();
     }
 
+    // Broadcast game over en temps réel
+    if (_isRealtimeDuel && _realtimeService != null) {
+      int? playTime;
+      if (_sessionStartTime != null) {
+        playTime = DateTime.now().difference(_sessionStartTime!).inSeconds;
+      }
+      _realtimeService!.sendGameOver(
+        finalScore: _score,
+        timeSeconds: playTime ?? 0,
+      );
+
+      if (_realtimeOpponentGameOver) {
+        _showRealtimeDuelResult(
+          _realtimeService!.opponentFinalScore ?? _realtimeOpponentScore,
+          _realtimeService!.opponentFinalTime,
+        );
+      } else {
+        _waitingForOpponentResult = true;
+      }
+    }
+
+    // Bot duel : le bot finit aussi (ou continue si pas fini)
+    if (_isBotDuel) {
+      if (_botFinished) {
+        // Le bot a déjà fini, montrer le résultat directement
+        _botScoreTimer?.cancel();
+        _showRealtimeDuelResult(_botFinalScore, _botDuration);
+      } else {
+        // Le bot n'a pas encore fini - il continue à jouer (réaliste)
+        // Le timer continue de tourner pour que le score monte encore
+        _waitingForOpponentResult = true;
+        // Le bot finira soit par son _botGameOverTime, soit dans 20-60s
+        final elapsed = _botStartTime != null
+            ? DateTime.now().difference(_botStartTime!).inSeconds
+            : 0;
+        final remaining = _botGameOverTime - elapsed;
+        final waitTime = remaining > 0
+            ? remaining.clamp(15, 60)
+            : 15 + Math.Random().nextInt(30);
+        Timer(Duration(seconds: waitTime), () {
+          if (mounted && !_botFinished) {
+            _finishBotGame();
+            _submitBotScore();
+          }
+        });
+      }
+    }
+
     setState(() {
       _isGameOver = true;
     });
@@ -2780,6 +2959,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       playTime = DateTime.now().difference(_sessionStartTime!).inSeconds;
     }
 
+    // Bot duel : soumettre le score du bot SEULEMENT s'il a déjà fini
+    // Sinon, le timer dans _endGame() s'en chargera quand le bot finira
+    if (_isBotDuel && _botFinished) {
+      await _submitBotScore();
+    }
+
     final updatedDuel = await duelService.submitScore(
       duelId: _duelId!,
       playerId: playerId,
@@ -2788,7 +2973,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     );
 
     if (updatedDuel != null && mounted) {
-      // Déterminer qui est l'adversaire
+      // En mode bot ou temps réel, ne pas écraser les données adversaire
+      if ((_isRealtimeDuel || _isBotDuel) && _realtimeOpponentGameOver) {
+        setState(() {
+          _myTime = playTime;
+        });
+        return;
+      }
+
+      // Mode async : lire les données de la DB
       final isChallenger = updatedDuel.challengerId == playerId;
 
       setState(() {
@@ -2835,6 +3028,570 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
 
     // Sync avec le cloud
     await statsService.syncToCloud();
+  }
+
+  Widget _buildCountdownOverlay() {
+    final bool isWaiting = _countdownValue < 0;
+    final bool isCountingDown = _countdownValue > 0;
+    final bool isGo = _countdownValue == 0;
+    final opponentName = _duelOpponentName ?? widget.opponentName ?? 'Adversaire';
+    final opponentPhoto = _duelOpponentPhotoUrl ?? widget.opponentPhotoUrl;
+
+    return Container(
+      color: Colors.black.withOpacity(0.6),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Titre
+          const Text(
+            'DUEL EN DIRECT',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              color: Colors.white,
+              letterSpacing: 2,
+              shadows: [
+                Shadow(color: Color(0xFFE91E63), offset: Offset(0, 2), blurRadius: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // VS Layout avec avatars
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Mon avatar
+              _buildCountdownPlayerCard(
+                name: _userName,
+                photoUrl: _googlePhotoUrl,
+                isReady: true,
+              ),
+              const SizedBox(width: 12),
+              // VS
+              const Text(
+                'VS',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  fontStyle: FontStyle.italic,
+                  color: Color(0xFFFFD700),
+                  shadows: [
+                    Shadow(color: Colors.black, offset: Offset(2, 3), blurRadius: 6),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Adversaire
+              _buildCountdownPlayerCard(
+                name: opponentName,
+                photoUrl: opponentPhoto,
+                isReady: _isBotDuel ? true : (_realtimeService?.isOpponentPresent ?? false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 30),
+
+          // Countdown ou message d'attente
+          if (isWaiting)
+            Text(
+              'En attente de $opponentName...',
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+            )
+          else
+            TweenAnimationBuilder<double>(
+              key: ValueKey(_countdownValue),
+              tween: Tween(begin: 2.5, end: 1.0),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.elasticOut,
+              builder: (context, scale, child) {
+                return Transform.scale(
+                  scale: scale,
+                  child: Text(
+                    isCountingDown ? '$_countdownValue' : 'GO!',
+                    style: TextStyle(
+                      fontSize: isCountingDown ? 100 : 70,
+                      fontWeight: FontWeight.w900,
+                      fontStyle: FontStyle.italic,
+                      color: isGo ? const Color(0xFF4CAF50) : Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: isGo ? const Color(0xFF4CAF50) : const Color(0xFFE91E63),
+                          offset: const Offset(0, 4),
+                          blurRadius: 20,
+                        ),
+                        const Shadow(
+                          color: Colors.black,
+                          offset: Offset(3, 5),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCountdownPlayerCard({
+    required String name,
+    String? photoUrl,
+    required bool isReady,
+  }) {
+    return Column(
+      children: [
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isReady ? const Color(0xFF4CAF50) : Colors.grey,
+              width: 3,
+            ),
+            boxShadow: isReady
+                ? [BoxShadow(color: const Color(0xFF4CAF50).withOpacity(0.5), blurRadius: 12)]
+                : [],
+          ),
+          child: ClipOval(
+            child: photoUrl != null
+                ? Image.network(photoUrl, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: const Color(0xFF3D2066),
+                      child: const Icon(Icons.person, size: 30, color: Colors.white54),
+                    ))
+                : Container(
+                    color: const Color(0xFF3D2066),
+                    child: const Icon(Icons.person, size: 30, color: Colors.white54),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          name,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 3),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: isReady ? const Color(0xFF4CAF50) : Colors.grey.shade700,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            isReady ? 'PRÊT' : '...',
+            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWaitingForOpponentOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.7),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'TON SCORE',
+              style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '$_score',
+              style: const TextStyle(
+                color: Color(0xFFFFD700),
+                fontSize: 52,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 25),
+            const SizedBox(
+              width: 40,
+              height: 40,
+              child: CircularProgressIndicator(
+                color: Color(0xFFE91E63),
+                strokeWidth: 3,
+              ),
+            ),
+            const SizedBox(height: 15),
+            Text(
+              'En attente de ${_duelOpponentName ?? "l\'adversaire"}...',
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Score actuel : $_realtimeOpponentScore',
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+            const SizedBox(height: 25),
+            // Bouton quitter sans attendre
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                  ),
+                  borderRadius: BorderRadius.circular(25),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C3483).withOpacity(0.5),
+                      offset: const Offset(0, 4),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.home_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'QUITTER',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Le résultat sera visible dans Duels',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRealtimeDuelResult(int opponentFinalScore, int? opponentTimeSeconds) {
+    setState(() {
+      _opponentScore = opponentFinalScore;
+      _opponentName = _duelOpponentName;
+      _opponentPhotoUrl = _duelOpponentPhotoUrl;
+      _opponentTime = opponentTimeSeconds;
+      if (_sessionStartTime != null) {
+        _myTime = DateTime.now().difference(_sessionStartTime!).inSeconds;
+      }
+      if (_score > opponentFinalScore) {
+        _isDuelWinner = true;
+      } else if (_score < opponentFinalScore) {
+        _isDuelWinner = false;
+      } else {
+        _isDuelWinner = null; // Égalité
+      }
+      _waitingForOpponentResult = false;
+    });
+  }
+
+  // === BOT SIMULATION METHODS ===
+
+  /// Initialise l'algorithme intelligent du bot basé sur le niveau du joueur
+  void _initSmartBot() {
+    final rng = Math.Random();
+
+    // Le score "typique" d'un joueur = environ 40-60% de son high score
+    // Car le high score = meilleure partie, pas une partie normale
+    final highScore = _highScore > 0 ? _highScore : 3000;
+    final typicalScore = (highScore * (0.40 + rng.nextDouble() * 0.20)).round();
+
+    // === DÉCISION : Le bot gagne ou perd ? ===
+    // 45% de chances de perdre, 45% de gagner, 10% match serré
+    final roll = rng.nextDouble();
+    if (roll < 0.45) {
+      // Bot PERD - score inférieur au score typique
+      _botWillLose = true;
+      // Score entre 40% et 80% du score typique
+      final ratio = 0.40 + rng.nextDouble() * 0.40;
+      _botFinalScore = (typicalScore * ratio).round();
+      // Durée courte (le bot "meurt" plus tôt)
+      _botGameOverTime = 40 + rng.nextInt(80); // 40s à 120s
+      _botDuration = _botGameOverTime;
+    } else if (roll < 0.90) {
+      // Bot GAGNE - score un peu supérieur au score typique
+      _botWillLose = false;
+      // Score entre 110% et 150% du score typique
+      final ratio = 1.10 + rng.nextDouble() * 0.40;
+      _botFinalScore = (typicalScore * ratio).round();
+      // Durée moyenne à longue
+      _botDuration = 80 + rng.nextInt(140); // 80s à 220s
+      _botGameOverTime = _botDuration;
+    } else {
+      // Match SERRÉ - score très proche du score typique
+      _botWillLose = rng.nextBool();
+      // Score entre 85% et 115% du score typique
+      final ratio = 0.85 + rng.nextDouble() * 0.30;
+      _botFinalScore = (typicalScore * ratio).round();
+      _botDuration = 60 + rng.nextInt(120); // 60s à 180s
+      _botGameOverTime = _botDuration;
+    }
+
+    // Vérification réalisme : le score par seconde ne doit pas dépasser ~25pts/s
+    // Un vrai joueur fait environ 10-25 pts/seconde en moyenne
+    final maxRealisticScore = (_botGameOverTime * 25).round();
+    _botFinalScore = _botFinalScore.clamp(300, maxRealisticScore);
+
+    // === GÉNÉRER LES BURSTS DE SCORE (simule des lignes complétées) ===
+    _botScoreBursts = _generateBotBursts(rng);
+  }
+
+  /// Génère une liste de "bursts" de score pour simuler des vraies lignes
+  List<_BotScoreBurst> _generateBotBursts(Math.Random rng) {
+    final bursts = <_BotScoreBurst>[];
+    int remainingScore = _botFinalScore;
+    final totalTime = _botGameOverTime.toDouble();
+
+    // Phase 1 : Début lent (0-20s) - le joueur place ses premières pièces
+    // Première ligne complétée entre 12 et 22 secondes (réaliste)
+    double currentTime = 12.0 + rng.nextDouble() * 10.0;
+
+    while (remainingScore > 0 && currentTime < totalTime - 3) {
+      // Progression dans le jeu (0.0 = début, 1.0 = fin)
+      final gameProgress = currentTime / totalTime;
+
+      // Au début, seulement des petits scores (1 ligne)
+      // En milieu/fin, possibilité de combos
+      int burstPoints;
+      if (gameProgress < 0.25) {
+        // Début : uniquement 1 ligne = petits scores
+        burstPoints = 100 + rng.nextInt(150); // 100-250
+      } else if (gameProgress < 0.50) {
+        // Milieu début : 1-2 lignes
+        final lines = rng.nextDouble() < 0.7 ? 1 : 2;
+        burstPoints = lines == 1
+            ? 100 + rng.nextInt(200)   // 100-300
+            : 250 + rng.nextInt(300);  // 250-550
+      } else if (gameProgress < 0.75) {
+        // Milieu fin : 1-3 lignes, combos possibles
+        final lineRoll = rng.nextDouble();
+        if (lineRoll < 0.4) {
+          burstPoints = 100 + rng.nextInt(200);   // 1 ligne: 100-300
+        } else if (lineRoll < 0.8) {
+          burstPoints = 250 + rng.nextInt(350);   // 2 lignes: 250-600
+        } else {
+          burstPoints = 400 + rng.nextInt(500);   // 3 lignes: 400-900
+        }
+      } else {
+        // Fin : grille remplie, gros combos possibles
+        final lineRoll = rng.nextDouble();
+        if (lineRoll < 0.3) {
+          burstPoints = 100 + rng.nextInt(250);   // 1 ligne: 100-350
+        } else if (lineRoll < 0.6) {
+          burstPoints = 300 + rng.nextInt(400);   // 2 lignes: 300-700
+        } else if (lineRoll < 0.85) {
+          burstPoints = 500 + rng.nextInt(500);   // 3 lignes: 500-1000
+        } else {
+          burstPoints = 800 + rng.nextInt(700);   // 4 lignes: 800-1500
+        }
+      }
+
+      burstPoints = burstPoints.clamp(0, remainingScore);
+      if (burstPoints <= 0) break;
+
+      bursts.add(_BotScoreBurst(
+        timeSeconds: currentTime,
+        points: burstPoints,
+      ));
+
+      remainingScore -= burstPoints;
+
+      // Pause entre les lignes : dépend du moment dans la partie
+      // Début = plus de temps (le joueur est prudent)
+      // Fin = moins de temps (la grille se remplit vite, pièces placées plus vite)
+      double pauseMin, pauseMax;
+      if (gameProgress < 0.3) {
+        pauseMin = 8.0; pauseMax = 18.0;  // Début : 8-18s entre chaque ligne
+      } else if (gameProgress < 0.6) {
+        pauseMin = 5.0; pauseMax = 14.0;  // Milieu : 5-14s
+      } else {
+        pauseMin = 3.0; pauseMax = 10.0;  // Fin : 3-10s
+      }
+      currentTime += pauseMin + rng.nextDouble() * (pauseMax - pauseMin);
+    }
+
+    // S'il reste du score non distribué, l'ajouter au dernier burst
+    if (remainingScore > 0 && bursts.isNotEmpty) {
+      bursts.last = _BotScoreBurst(
+        timeSeconds: bursts.last.timeSeconds,
+        points: bursts.last.points + remainingScore,
+      );
+    } else if (remainingScore > 0) {
+      bursts.add(_BotScoreBurst(timeSeconds: 15.0, points: remainingScore));
+    }
+
+    return bursts;
+  }
+
+  void _startBotCountdown() {
+    int remaining = 5;
+
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      remaining--;
+      setState(() => _countdownValue = remaining);
+
+      if (remaining <= 0) {
+        timer.cancel();
+        // GO! Démarrer le jeu
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            // Initialiser l'algo intelligent maintenant (après _loadUserData)
+            _initSmartBot();
+
+            setState(() {
+              _showCountdown = false;
+              _gameStarted = true;
+            });
+            _sessionStartTime = DateTime.now();
+            _startBotScoreSimulation();
+          }
+        });
+      }
+    });
+  }
+
+  void _startBotScoreSimulation() {
+    _botStartTime = DateTime.now();
+    _botCurrentScore = 0;
+    int _nextBurstIndex = 0;
+
+    // Le bot envoie des mises à jour toutes les 1.5 secondes
+    _botScoreTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+      if (!mounted || _botFinished) {
+        timer.cancel();
+        return;
+      }
+
+      final elapsed = DateTime.now().difference(_botStartTime!).inSeconds;
+
+      // Appliquer les bursts de score dont le temps est passé
+      bool scoreChanged = false;
+      while (_nextBurstIndex < _botScoreBursts.length &&
+             _botScoreBursts[_nextBurstIndex].timeSeconds <= elapsed) {
+        _botCurrentScore += _botScoreBursts[_nextBurstIndex].points;
+        _nextBurstIndex++;
+        scoreChanged = true;
+      }
+
+      if (scoreChanged) {
+        setState(() {
+          _realtimeOpponentScore = _botCurrentScore;
+        });
+      }
+
+      // Le bot a son game over (soit il "perd", soit il a fini sa durée)
+      if (elapsed >= _botGameOverTime) {
+        timer.cancel();
+        _finishBotGame();
+      }
+    });
+  }
+
+  void _finishBotGame() {
+    if (_botFinished) return;
+    _botFinished = true;
+
+    // Le score final = tout le score restant des bursts non encore appliqués
+    _botCurrentScore = _botFinalScore;
+
+    // Calculer le vrai temps écoulé
+    final actualTime = _botStartTime != null
+        ? DateTime.now().difference(_botStartTime!).inSeconds
+        : _botDuration;
+
+    setState(() {
+      _realtimeOpponentScore = _botFinalScore;
+      _realtimeOpponentGameOver = true;
+    });
+
+    // Sauvegarder les vrais valeurs pour la soumission
+    _botDuration = actualTime;
+
+    // Si le joueur a déjà fini, montrer le résultat
+    if (_isGameOver) {
+      _showRealtimeDuelResult(_botFinalScore, actualTime);
+    }
+  }
+
+  /// Soumet le score du bot dans la DB
+  Future<void> _submitBotScore() async {
+    if (_duelId == null || widget.opponentId == null) return;
+
+    try {
+      await duelService.submitScore(
+        duelId: _duelId!,
+        playerId: widget.opponentId!,
+        score: _botFinalScore,
+        timeInSeconds: _botDuration,
+      );
+    } catch (e) {
+      print('Erreur soumission score bot: $e');
+    }
+  }
+
+  /// Sauvegarde les infos du bot pour soumission différée
+  /// Le bot "continue à jouer" même après que le joueur quitte
+  void _savePendingBotCompletion() async {
+    if (_duelId == null || widget.opponentId == null) return;
+
+    final rng = Math.Random();
+    final elapsed = _botStartTime != null
+        ? DateTime.now().difference(_botStartTime!).inSeconds
+        : 0;
+
+    // Le bot finira dans 30s à 2min à partir de maintenant
+    final extraTime = 30 + rng.nextInt(91); // 30-120 secondes
+    final finishTimestamp = DateTime.now().add(Duration(seconds: extraTime)).millisecondsSinceEpoch;
+
+    // Calculer le score final du bot (score actuel + ce qu'il gagnera pendant le temps restant)
+    // Score réaliste : environ 10-20 pts/seconde supplémentaire
+    final extraScore = (extraTime * (10 + rng.nextInt(11))).round();
+    final projectedScore = _botCurrentScore + extraScore;
+    final projectedTime = elapsed + extraTime;
+
+    // Sauvegarder dans SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pending_bot_duel_id', _duelId!);
+    await prefs.setString('pending_bot_opponent_id', widget.opponentId!);
+    await prefs.setInt('pending_bot_score', projectedScore);
+    await prefs.setInt('pending_bot_time', projectedTime);
+    await prefs.setInt('pending_bot_finish_at', finishTimestamp);
+  }
+
+  void _handleOpponentDisconnect() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: Colors.orange.shade700,
+        content: Text(
+          '${_duelOpponentName ?? "L\'adversaire"} s\'est déconnecté',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+    });
   }
 
   Widget _buildGameOverScreen() {
@@ -2959,7 +3716,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                   ),
                 ),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
               // Score avec effet doré brillant
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 18),
@@ -3092,31 +3849,45 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
               ],
               const SizedBox(height: 30),
               // Boutons d'action avec effet 3D candy
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Bouton Quitter - Style candy 3D violet
-                  _buildCandyButton(
-                    onTap: () => Navigator.of(context).pop(),
-                    icon: Icons.home_rounded,
-                    label: 'QUITTER',
-                    gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
-                    shadowColor: const Color(0xFF6C3483),
+              if (_isDuelMode)
+                // En mode duel : bouton QUITTER centré et réduit
+                Center(
+                  child: SizedBox(
+                    width: 160,
+                    child: _buildCandyButton(
+                      onTap: () => Navigator.of(context).pop(),
+                      icon: Icons.home_rounded,
+                      label: 'QUITTER',
+                      gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                      shadowColor: const Color(0xFF6C3483),
+                    ),
                   ),
-                  // En mode duel, pas de bouton rejouer
-                  if (!_isDuelMode) ...[
-                    const SizedBox(width: 15),
-                    // Bouton Rejouer - Style candy 3D vert
-                    _buildCandyButton(
-                      onTap: _restartGame,
-                      icon: Icons.replay_rounded,
-                      label: 'REJOUER',
-                      gradientColors: const [Color(0xFF2ECC71), Color(0xFF27AE60)],
-                      shadowColor: const Color(0xFF1E8449),
+                )
+              else
+                // Mode normal : QUITTER + REJOUER
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildCandyButton(
+                        onTap: () => Navigator.of(context).pop(),
+                        icon: Icons.home_rounded,
+                        label: 'QUITTER',
+                        gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                        shadowColor: const Color(0xFF6C3483),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildCandyButton(
+                        onTap: _restartGame,
+                        icon: Icons.replay_rounded,
+                        label: 'REJOUER',
+                        gradientColors: const [Color(0xFF2ECC71), Color(0xFF27AE60)],
+                        shadowColor: const Color(0xFF1E8449),
+                      ),
                     ),
                   ],
-                ],
-              ),
+                ),
             ],
           ),
         ),
@@ -3186,11 +3957,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: _isDuelWinner == true
-                  ? const Color(0xFF32CD32)
-                  : _isDuelWinner == false
-                      ? const Color(0xFFEB3349)
-                      : Colors.white,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 15),
@@ -3343,7 +4110,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           // Gradient principal
           gradient: LinearGradient(
@@ -3392,17 +4159,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                     color: Colors.white.withOpacity(0.25),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 18),
+                  child: Icon(icon, color: Colors.white, size: 15),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 // Texte avec effet
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
-                    letterSpacing: 1.2,
+                    letterSpacing: 1.0,
                     shadows: [
                       Shadow(
                         color: shadowColor,
@@ -3833,17 +4600,11 @@ class _JellyBombExplosion {
   });
 }
 
-/// Données pour une particule d'énergie vers la jauge
-class _EnergyParticle {
-  final int id;
-  final Offset startPosition;
-  final Offset endPosition;
-  final Color color;
-
-  _EnergyParticle({
-    required this.id,
-    required this.startPosition,
-    required this.endPosition,
-    required this.color,
-  });
+/// Un burst de score du bot (simule une complétion de ligne)
+class _BotScoreBurst {
+  final double timeSeconds;
+  final int points;
+  const _BotScoreBurst({required this.timeSeconds, required this.points});
 }
+
+// Sugar Rush _EnergyParticle class désactivée - voir backup

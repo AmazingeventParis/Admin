@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Puzzle - Test Duel</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a0a2e, #2d1b4e, #1a0a2e);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+        }
+        h1 { font-size: 20px; margin-bottom: 10px; color: #E91E63; }
+
+        /* Header */
+        .header {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .header select, .header button {
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid #555;
+            background: #2d1b4e;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .header button { background: #E91E63; border-color: #E91E63; font-weight: bold; }
+        .header button:hover { background: #C2185B; }
+        .header button.green { background: #4CAF50; border-color: #4CAF50; }
+
+        /* Score bar */
+        .score-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 340px;
+            margin-bottom: 10px;
+            padding: 8px 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+        }
+        .score-bar .label { font-size: 11px; color: #aaa; }
+        .score-bar .value { font-size: 22px; font-weight: bold; color: #FFD700; }
+        .score-bar .opponent .value { color: #FF6B6B; }
+
+        /* Grille */
+        .grid-container {
+            position: relative;
+            margin-bottom: 15px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(8, 38px);
+            grid-template-rows: repeat(8, 38px);
+            gap: 2px;
+            background: rgba(0,0,0,0.4);
+            padding: 4px;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.15);
+        }
+        .cell {
+            width: 38px;
+            height: 38px;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            transition: background 0.15s;
+        }
+        .cell.filled { border: 1px solid rgba(255,255,255,0.3); }
+        .cell.preview { opacity: 0.5; }
+        .cell.clearing {
+            animation: clearAnim 0.3s ease-out;
+        }
+        @keyframes clearAnim {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(0); opacity: 0; }
+        }
+
+        /* Couleurs Candy (identiques au jeu Flutter) */
+        .color-0 { background: #FFD700; }  /* yellow */
+        .color-1 { background: #4169E1; }  /* blue */
+        .color-2 { background: #00CED1; }  /* cyan */
+        .color-3 { background: #FF8C00; }  /* orange */
+        .color-4 { background: #9932CC; }  /* purple */
+        .color-5 { background: #FF00FF; }  /* fuchsia */
+        .color-6 { background: #FF4757; }  /* red */
+
+        /* Pieces */
+        .pieces-tray {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+        .piece-slot {
+            padding: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 80px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .piece-slot:hover { border-color: #E91E63; }
+        .piece-slot.selected { border-color: #FFD700; background: rgba(255,215,0,0.1); }
+        .piece-slot.empty { opacity: 0.3; cursor: default; }
+        .piece-grid {
+            display: grid;
+            gap: 2px;
+        }
+        .piece-block {
+            width: 22px;
+            height: 22px;
+            border-radius: 3px;
+        }
+        .piece-block.empty { background: transparent; }
+
+        /* Game Over */
+        .game-over {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .game-over h2 { font-size: 40px; color: #E91E63; margin-bottom: 15px; }
+        .game-over .final-score { font-size: 50px; color: #FFD700; font-weight: bold; }
+        .game-over button { margin-top: 20px; padding: 12px 30px; font-size: 16px; }
+
+        /* Info */
+        .info { font-size: 12px; color: #888; text-align: center; margin-top: 8px; }
+        .duel-info {
+            background: linear-gradient(90deg, #E91E63, #9C27B0);
+            padding: 6px 15px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .status { color: #4CAF50; font-weight: bold; }
+        .opponent-score-live {
+            background: rgba(255,107,107,0.2);
+            padding: 3px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        .seed-info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mini Puzzle - Test Duel Admin</h1>
+
+    <div class="header">
+        <select id="botSelect"><option value="">Choisir un bot...</option></select>
+        <button onclick="loadDuels()">Charger duels</button>
+        <select id="duelSelect"><option value="">Choisir un duel...</option></select>
+        <button class="green" onclick="startGame()">Jouer</button>
+    </div>
+
+    <div id="duelBanner" class="duel-info" style="display:none;"></div>
+
+    <div class="score-bar">
+        <div class="me">
+            <div class="label">MON SCORE</div>
+            <div class="value" id="myScore">0</div>
+        </div>
+        <div class="opponent">
+            <div class="label">ADVERSAIRE</div>
+            <div class="value" id="opponentScore">-</div>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="pieces-tray" id="piecesTray"></div>
+
+    <div class="info">Clic sur une piece, puis clic sur la grille pour la placer. Lignes/colonnes completes = points!</div>
+    <div class="seed-info" id="seedInfo"></div>
+
+    <div id="gameOverScreen" class="game-over" style="display:none;">
+        <h2>GAME OVER</h2>
+        <div class="final-score" id="finalScore">0</div>
+        <button onclick="submitAndClose()">Soumettre le score</button>
+        <button onclick="document.getElementById('gameOverScreen').style.display='none'" style="background:#666;">Fermer</button>
+    </div>
+
+    <script>
+    const SUPABASE_URL = 'https://icujwpwicsmyuyidubqf.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljdWp3cHdpY3NteXV5aWR1YnFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMTk5NjEsImV4cCI6MjA4NTY5NTk2MX0.PddUsHjUcHaJfeDciB8BYAVE50oNWG9AwkLLYjMFUl4';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // === ETAT DU JEU ===
+    const GRID_SIZE = 8;
+    let grid = [];       // grid[y][x] = colorIndex ou -1
+    let score = 0;
+    let pieces = [null, null, null];
+    let selectedPiece = -1;
+    let currentBotId = null;
+    let currentDuelId = null;
+    let currentDuelSeed = null;
+    let realtimeChannel = null;
+    let opponentLiveScore = 0;
+    let gameActive = false;
+
+    // =====================================================
+    // PORT EXACT DE Dart Random (dart:math) vers JavaScript
+    // Utilise BigInt pour la precision 64-bit
+    // Source: sdk/lib/_internal/vm/lib/math_patch.dart
+    // =====================================================
+    const MASK64 = (1n << 64n) - 1n;
+    const POW2_32 = 1n << 32n;
+
+    class DartRandom {
+        constructor(seed) {
+            this._state = DartRandom._setupSeed(BigInt(seed));
+            // Dart factory: .._nextState().._nextState().._nextState().._nextState()
+            this._nextState();
+            this._nextState();
+            this._nextState();
+            this._nextState();
+        }
+
+        // Thomas Wang 64-bit integer hash (identique au Dart SDK)
+        static _setupSeed(seed) {
+            let n = seed & MASK64;
+            // ~n en 64-bit unsigned = MASK64 ^ n
+            n = ((MASK64 ^ n) + (n << 21n)) & MASK64;
+            n = n ^ (n >> 24n);
+            n = (n * 265n) & MASK64;
+            n = n ^ (n >> 14n);
+            n = (n * 21n) & MASK64;
+            n = n ^ (n >> 28n);
+            n = (n + (n << 31n)) & MASK64;
+            if (n === 0n) n = 0x5a17n;
+            return n;
+        }
+
+        // Multiply-with-Carry (MWC) - identique au Dart SDK
+        _nextState() {
+            const A = 0xffffda61n;
+            const state_lo = this._state & 0xFFFFFFFFn;
+            const state_hi = this._state >> 32n;
+            this._state = A * state_lo + state_hi;
+        }
+
+        nextInt(max) {
+            const bigMax = BigInt(max);
+            // Power of 2 fast path
+            if ((bigMax & (-bigMax)) === bigMax) {
+                this._nextState();
+                return Number((this._state & 0xFFFFFFFFn) & (bigMax - 1n));
+            }
+            // Rejection sampling pour distribution uniforme
+            let rnd32, result;
+            do {
+                this._nextState();
+                rnd32 = this._state & 0xFFFFFFFFn;
+                result = rnd32 % bigMax;
+            } while ((rnd32 - result + bigMax) > POW2_32);
+            return Number(result);
+        }
+
+        nextDouble() {
+            const a = BigInt(this.nextInt(1 << 26));
+            const b = BigInt(this.nextInt(1 << 27));
+            return Number(a * (1n << 27n) + b) / Math.pow(2, 53);
+        }
+    }
+
+    let rng = null;
+
+    // =====================================================
+    // CATALOGUE DE PIECES - Identique a PiecesCatalog.main
+    // 48 pieces dans le meme ordre que le Dart
+    // color: 0=yellow, 1=blue, 2=cyan, 3=orange, 4=purple, 5=fuchsia, 6=red
+    // =====================================================
+    const PIECES_CATALOG = [
+        // Carres (2 chacun)
+        { blocks: [[0,0]], color: 0 },                                                          // square1
+        { blocks: [[0,0]], color: 0 },                                                          // square1
+        { blocks: [[0,0],[1,0],[0,1],[1,1]], color: 0 },                                        // square2
+        { blocks: [[0,0],[1,0],[0,1],[1,1]], color: 0 },                                        // square2
+        // Dominos (2 chacun)
+        { blocks: [[0,0],[1,0]], color: 1 },                                                    // domino2H
+        { blocks: [[0,0],[1,0]], color: 1 },                                                    // domino2H
+        { blocks: [[0,0],[0,1]], color: 1 },                                                    // domino2V
+        { blocks: [[0,0],[0,1]], color: 1 },                                                    // domino2V
+        // Lignes 3 (2 chacun)
+        { blocks: [[0,0],[1,0],[2,0]], color: 2 },                                              // line3H
+        { blocks: [[0,0],[1,0],[2,0]], color: 2 },                                              // line3H
+        { blocks: [[0,0],[0,1],[0,2]], color: 2 },                                              // line3V
+        { blocks: [[0,0],[0,1],[0,2]], color: 2 },                                              // line3V
+        // Lignes 4 (2 chacun)
+        { blocks: [[0,0],[1,0],[2,0],[3,0]], color: 2 },                                        // line4H
+        { blocks: [[0,0],[1,0],[2,0],[3,0]], color: 2 },                                        // line4H
+        { blocks: [[0,0],[0,1],[0,2],[0,3]], color: 2 },                                        // line4V
+        { blocks: [[0,0],[0,1],[0,2],[0,3]], color: 2 },                                        // line4V
+        // Lignes 5 (2 chacun)
+        { blocks: [[0,0],[1,0],[2,0],[3,0],[4,0]], color: 2 },                                  // line5H
+        { blocks: [[0,0],[1,0],[2,0],[3,0],[4,0]], color: 2 },                                  // line5H
+        { blocks: [[0,0],[0,1],[0,2],[0,3],[0,4]], color: 2 },                                  // line5V
+        { blocks: [[0,0],[0,1],[0,2],[0,3],[0,4]], color: 2 },                                  // line5V
+        // L de 3 (1 chaque rotation)
+        { blocks: [[0,0],[0,1],[1,1]], color: 3 },                                              // l3_0
+        { blocks: [[0,0],[1,0],[0,1]], color: 3 },                                              // l3_90
+        { blocks: [[0,0],[1,0],[1,1]], color: 3 },                                              // l3_180
+        { blocks: [[1,0],[0,1],[1,1]], color: 3 },                                              // l3_270
+        // L de 4 (1 chaque rotation)
+        { blocks: [[0,0],[0,1],[0,2],[1,2]], color: 3 },                                        // l4_0
+        { blocks: [[0,0],[1,0],[2,0],[0,1]], color: 3 },                                        // l4_90
+        { blocks: [[0,0],[1,0],[1,1],[1,2]], color: 3 },                                        // l4_180
+        { blocks: [[2,0],[0,1],[1,1],[2,1]], color: 3 },                                        // l4_270
+        // J de 4 (1 chaque rotation)
+        { blocks: [[1,0],[1,1],[0,2],[1,2]], color: 1 },                                        // j4_0
+        { blocks: [[0,0],[0,1],[1,1],[2,1]], color: 1 },                                        // j4_90
+        { blocks: [[0,0],[1,0],[0,1],[0,2]], color: 1 },                                        // j4_180
+        { blocks: [[0,0],[1,0],[2,0],[2,1]], color: 1 },                                        // j4_270
+        // T de 4 (1 chaque rotation)
+        { blocks: [[0,0],[1,0],[2,0],[1,1]], color: 4 },                                        // t4_0
+        { blocks: [[0,0],[0,1],[1,1],[0,2]], color: 4 },                                        // t4_90
+        { blocks: [[1,0],[0,1],[1,1],[2,1]], color: 4 },                                        // t4_180
+        { blocks: [[1,0],[0,1],[1,1],[1,2]], color: 4 },                                        // t4_270
+        // S de 4 (2 chacun)
+        { blocks: [[1,0],[2,0],[0,1],[1,1]], color: 5 },                                        // s4_0
+        { blocks: [[1,0],[2,0],[0,1],[1,1]], color: 5 },                                        // s4_0
+        { blocks: [[0,0],[0,1],[1,1],[1,2]], color: 5 },                                        // s4_90
+        { blocks: [[0,0],[0,1],[1,1],[1,2]], color: 5 },                                        // s4_90
+        // Z de 4 (2 chacun)
+        { blocks: [[0,0],[1,0],[1,1],[2,1]], color: 6 },                                        // z4_0
+        { blocks: [[0,0],[1,0],[1,1],[2,1]], color: 6 },                                        // z4_0
+        { blocks: [[1,0],[0,1],[1,1],[0,2]], color: 6 },                                        // z4_90
+        { blocks: [[1,0],[0,1],[1,1],[0,2]], color: 6 },                                        // z4_90
+        // Rectangles (2 chacun)
+        { blocks: [[0,0],[1,0],[0,1],[1,1],[0,2],[1,2]], color: 3 },                             // rect2x3
+        { blocks: [[0,0],[1,0],[0,1],[1,1],[0,2],[1,2]], color: 3 },                             // rect2x3
+        { blocks: [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]], color: 3 },                             // rect3x2
+        { blocks: [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]], color: 3 },                             // rect3x2
+    ];
+
+    // === INITIALISATION ===
+    window.addEventListener('DOMContentLoaded', async () => {
+        initGrid();
+        renderGrid();
+        await loadBots();
+    });
+
+    function initGrid() {
+        grid = [];
+        for (let y = 0; y < GRID_SIZE; y++) {
+            grid[y] = [];
+            for (let x = 0; x < GRID_SIZE; x++) grid[y][x] = -1;
+        }
+    }
+
+    // === CHARGEMENT BOTS ===
+    async function loadBots() {
+        const { data } = await sb.from('players').select('id, username, device_id').order('username');
+        const sel = document.getElementById('botSelect');
+        sel.innerHTML = '<option value="">Choisir un bot...</option>';
+        data?.filter(p => p.device_id?.startsWith('fake_')).forEach(p => {
+            sel.innerHTML += `<option value="${p.id}">${p.username}</option>`;
+        });
+    }
+
+    // === CHARGEMENT DUELS ===
+    async function loadDuels() {
+        currentBotId = document.getElementById('botSelect').value;
+        if (!currentBotId) return alert('Choisis un bot d\'abord');
+
+        // Mettre le bot en ligne
+        await sb.from('players').update({ last_seen_at: new Date().toISOString() }).eq('id', currentBotId);
+
+        const { data } = await sb.from('duels')
+            .select('*, challenger:players!duels_challenger_id_fkey(username), challenged:players!duels_challenged_id_fkey(username)')
+            .or(`challenger_id.eq.${currentBotId},challenged_id.eq.${currentBotId}`)
+            .or('status.eq.pending,status.eq.active,status.eq.live')
+            .order('created_at', { ascending: false });
+
+        const sel = document.getElementById('duelSelect');
+        sel.innerHTML = '<option value="">Choisir un duel...</option>';
+        data?.forEach(d => {
+            const isChallenger = d.challenger_id === currentBotId;
+            const opponent = isChallenger ? d.challenged?.username : d.challenger?.username;
+            const status = d.status === 'pending' ? 'En attente' : d.status === 'live' ? 'EN DIRECT' : 'Actif';
+            sel.innerHTML += `<option value="${d.id}" data-seed="${d.seed}" data-status="${d.status}">[${status}] vs ${opponent || '?'}</option>`;
+        });
+    }
+
+    // === DEMARRER LE JEU ===
+    async function startGame() {
+        const duelSel = document.getElementById('duelSelect');
+        const opt = duelSel.selectedOptions[0];
+        if (!opt || !opt.value) return alert('Choisis un duel');
+
+        currentDuelId = opt.value;
+        currentDuelSeed = parseInt(opt.dataset.seed);
+        const status = opt.dataset.status;
+
+        // Si pending, accepter le duel en mode live
+        if (status === 'pending') {
+            await sb.from('duels').update({ status: 'live' }).eq('id', currentDuelId);
+        }
+
+        // Reset
+        score = 0;
+        selectedPiece = -1;
+        gameActive = true;
+        opponentLiveScore = 0;
+        initGrid();
+
+        // Creer le generateur avec le meme algorithme que Dart
+        rng = new DartRandom(currentDuelSeed);
+
+        generatePieces();
+        renderGrid();
+        renderPieces();
+        updateScoreDisplay();
+
+        // Banner duel
+        document.getElementById('duelBanner').style.display = 'block';
+        document.getElementById('duelBanner').textContent = `Duel ${status === 'live' ? 'EN DIRECT' : ''} - Seed: ${currentDuelSeed}`;
+        document.getElementById('seedInfo').textContent = `Algorithme: Dart Random (MWC) - Pieces identiques au mobile`;
+
+        // Rejoindre le channel realtime
+        joinRealtimeChannel();
+
+        // Mettre le bot en ligne periodiquement
+        setInterval(async () => {
+            if (currentBotId) {
+                await sb.from('players').update({ last_seen_at: new Date().toISOString() }).eq('id', currentBotId);
+            }
+        }, 10000);
+    }
+
+    // === REALTIME ===
+    function joinRealtimeChannel() {
+        if (realtimeChannel) {
+            sb.removeChannel(realtimeChannel);
+        }
+
+        realtimeChannel = sb.channel(`duel:${currentDuelId}`, { config: { self: true } });
+
+        realtimeChannel.on('broadcast', { event: 'score_update' }, (payload) => {
+            const data = payload.payload || payload;
+            if (data.player_id !== currentBotId) {
+                opponentLiveScore = data.score || 0;
+                document.getElementById('opponentScore').textContent = opponentLiveScore;
+            }
+        });
+
+        realtimeChannel.on('broadcast', { event: 'game_over' }, (payload) => {
+            const data = payload.payload || payload;
+            if (data.player_id !== currentBotId) {
+                opponentLiveScore = data.score || 0;
+                document.getElementById('opponentScore').textContent = opponentLiveScore + ' (FINI)';
+            }
+        });
+
+        realtimeChannel.on('broadcast', { event: 'countdown_start' }, () => {});
+        realtimeChannel.on('broadcast', { event: 'heartbeat' }, () => {});
+        realtimeChannel.on('presence', { event: 'sync' }, () => {});
+
+        realtimeChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                realtimeChannel.track({ player_id: currentBotId, status: 'ready' });
+                setInterval(() => {
+                    if (realtimeChannel) {
+                        realtimeChannel.send({ type: 'broadcast', event: 'heartbeat', payload: { player_id: currentBotId } });
+                    }
+                }, 3000);
+            }
+        });
+    }
+
+    function broadcastScore() {
+        if (realtimeChannel && gameActive) {
+            realtimeChannel.send({
+                type: 'broadcast',
+                event: 'score_update',
+                payload: { player_id: currentBotId, score: score }
+            });
+        }
+    }
+
+    function broadcastGameOver() {
+        if (realtimeChannel) {
+            realtimeChannel.send({
+                type: 'broadcast',
+                event: 'game_over',
+                payload: { player_id: currentBotId, score: score, time: 120 }
+            });
+        }
+    }
+
+    // =====================================================
+    // GENERATION DE PIECES - Identique a _generateNewPiecesRandom()
+    // Utilise Fisher-Yates shuffle avec DartRandom
+    // =====================================================
+
+    // Fisher-Yates shuffle deterministe (identique a SeededPieceGenerator.shuffleList)
+    function shuffleList(list) {
+        for (let i = list.length - 1; i > 0; i--) {
+            const j = rng.nextInt(i + 1);
+            const temp = list[i];
+            list[i] = list[j];
+            list[j] = temp;
+        }
+    }
+
+    function canPlacePieceAnywhere(piece) {
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                if (canPlace(piece, x, y)) return true;
+            }
+        }
+        return false;
+    }
+
+    function generatePieces() {
+        // Copier le catalogue (comme List<Piece>.from(PiecesCatalog.main))
+        const allPieces = PIECES_CATALOG.map(p => ({ blocks: p.blocks.map(b => [...b]), color: p.color }));
+
+        // Melanger avec Fisher-Yates (consomme 47 valeurs aleatoires)
+        shuffleList(allPieces);
+
+        // Compter les cellules vides
+        let emptyCells = 0;
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                if (grid[y][x] < 0) emptyCells++;
+            }
+        }
+
+        // Si plateau presque vide, prendre les 3 premieres pieces melangees
+        if (emptyCells > 50) {
+            pieces = [allPieces[0], allPieces[1], allPieces[2]];
+            return;
+        }
+
+        // Filtrer les pieces jouables
+        const playablePieces = [];
+        for (const piece of allPieces) {
+            if (canPlacePieceAnywhere(piece)) {
+                playablePieces.push(piece);
+            }
+        }
+
+        // Si pas assez de pieces jouables, ajouter des petites
+        if (playablePieces.length < 3) {
+            const smallPieces = allPieces.filter(p => p.blocks.length <= 2);
+            shuffleList(smallPieces);
+            for (const piece of smallPieces) {
+                if (!playablePieces.includes(piece)) {
+                    playablePieces.push(piece);
+                    if (playablePieces.length >= 3) break;
+                }
+            }
+        }
+
+        // Melanger les pieces jouables
+        shuffleList(playablePieces);
+
+        pieces = [
+            playablePieces.length > 0 ? playablePieces[0] : allPieces[0],
+            playablePieces.length > 1 ? playablePieces[1] : allPieces[1],
+            playablePieces.length > 2 ? playablePieces[2] : allPieces[2],
+        ];
+    }
+
+    // === RENDU GRILLE ===
+    function renderGrid() {
+        const el = document.getElementById('grid');
+        el.innerHTML = '';
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell' + (grid[y][x] >= 0 ? ` filled color-${grid[y][x]}` : '');
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+                cell.onclick = () => placePieceAt(x, y);
+                cell.onmouseenter = () => showPreview(x, y);
+                cell.onmouseleave = () => clearPreview();
+                el.appendChild(cell);
+            }
+        }
+    }
+
+    // === RENDU PIECES ===
+    function renderPieces() {
+        const tray = document.getElementById('piecesTray');
+        tray.innerHTML = '';
+        pieces.forEach((piece, i) => {
+            const slot = document.createElement('div');
+            slot.className = 'piece-slot' + (!piece ? ' empty' : '') + (selectedPiece === i ? ' selected' : '');
+            if (piece) {
+                slot.onclick = () => { selectedPiece = i; renderPieces(); };
+                const maxX = Math.max(...piece.blocks.map(b => b[0])) + 1;
+                const maxY = Math.max(...piece.blocks.map(b => b[1])) + 1;
+                const pg = document.createElement('div');
+                pg.className = 'piece-grid';
+                pg.style.gridTemplateColumns = `repeat(${maxX}, 22px)`;
+                for (let y = 0; y < maxY; y++) {
+                    for (let x = 0; x < maxX; x++) {
+                        const bl = document.createElement('div');
+                        const has = piece.blocks.some(b => b[0] === x && b[1] === y);
+                        bl.className = 'piece-block' + (has ? ` color-${piece.color}` : ' empty');
+                        pg.appendChild(bl);
+                    }
+                }
+                slot.appendChild(pg);
+            }
+            tray.appendChild(slot);
+        });
+    }
+
+    // === PREVIEW ===
+    function showPreview(gx, gy) {
+        clearPreview();
+        if (selectedPiece < 0 || !pieces[selectedPiece]) return;
+        const piece = pieces[selectedPiece];
+        const can = canPlace(piece, gx, gy);
+        piece.blocks.forEach(([bx, by]) => {
+            const cx = gx + bx, cy = gy + by;
+            if (cx < GRID_SIZE && cy < GRID_SIZE) {
+                const cell = document.querySelector(`.cell[data-x="${cx}"][data-y="${cy}"]`);
+                if (cell && grid[cy][cx] < 0) {
+                    cell.classList.add('preview', `color-${piece.color}`);
+                    if (!can) cell.style.opacity = '0.25';
+                }
+            }
+        });
+    }
+
+    function clearPreview() {
+        document.querySelectorAll('.cell.preview').forEach(c => {
+            c.classList.remove('preview');
+            c.style.opacity = '';
+            if (!c.classList.contains('filled')) {
+                for (let i = 0; i < 7; i++) c.classList.remove(`color-${i}`);
+            }
+        });
+    }
+
+    // === PLACEMENT ===
+    function canPlace(piece, gx, gy) {
+        return piece.blocks.every(([bx, by]) => {
+            const cx = gx + bx, cy = gy + by;
+            return cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE && grid[cy][cx] < 0;
+        });
+    }
+
+    function placePieceAt(gx, gy) {
+        if (!gameActive || selectedPiece < 0 || !pieces[selectedPiece]) return;
+        const piece = pieces[selectedPiece];
+        if (!canPlace(piece, gx, gy)) return;
+
+        // Placer
+        piece.blocks.forEach(([bx, by]) => {
+            grid[gy + by][gx + bx] = piece.color;
+        });
+        pieces[selectedPiece] = null;
+        selectedPiece = -1;
+
+        // Verifier lignes completes (score uniquement sur lignes, comme le jeu Flutter)
+        checkAndClearLines();
+
+        // Si les 3 pieces sont placees, en generer 3 nouvelles
+        if (pieces.every(p => p === null)) {
+            generatePieces();
+        }
+
+        renderGrid();
+        renderPieces();
+        updateScoreDisplay();
+        broadcastScore();
+
+        // Verifier game over
+        checkGameOver();
+    }
+
+    function checkAndClearLines() {
+        let cleared = 0;
+        // Lignes
+        for (let y = 0; y < GRID_SIZE; y++) {
+            if (grid[y].every(c => c >= 0)) {
+                for (let x = 0; x < GRID_SIZE; x++) grid[y][x] = -1;
+                cleared++;
+            }
+        }
+        // Colonnes
+        for (let x = 0; x < GRID_SIZE; x++) {
+            if (grid.every(row => row[x] >= 0)) {
+                for (let y = 0; y < GRID_SIZE; y++) grid[y][x] = -1;
+                cleared++;
+            }
+        }
+        if (cleared > 0) {
+            const bonus = cleared * 80 + (cleared > 1 ? cleared * 50 : 0);
+            score += bonus;
+        }
+    }
+
+    function checkGameOver() {
+        if (!gameActive) return;
+        const availablePieces = pieces.filter(p => p !== null);
+        if (availablePieces.length === 0) return;
+
+        for (const piece of availablePieces) {
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    if (canPlace(piece, x, y)) return;
+                }
+            }
+        }
+        gameActive = false;
+        broadcastGameOver();
+        document.getElementById('finalScore').textContent = score;
+        document.getElementById('gameOverScreen').style.display = 'flex';
+    }
+
+    function updateScoreDisplay() {
+        document.getElementById('myScore').textContent = score;
+    }
+
+    // === SOUMETTRE LE SCORE ===
+    async function submitAndClose() {
+        if (!currentDuelId || !currentBotId) return;
+
+        try {
+            const { data: duel } = await sb.from('duels').select('*').eq('id', currentDuelId).single();
+            if (!duel) return;
+
+            const isChallenger = duel.challenger_id === currentBotId;
+            const scoreField = isChallenger ? 'challenger_score' : 'challenged_score';
+            const timeField = isChallenger ? 'challenger_time' : 'challenged_time';
+            const opponentScoreField = isChallenger ? 'challenged_score' : 'challenger_score';
+            const opponentScore = duel[opponentScoreField];
+
+            let updateData = { [scoreField]: score, [timeField]: 120 };
+
+            if (opponentScore !== null) {
+                let winnerId = null;
+                if (score > opponentScore) winnerId = currentBotId;
+                else if (opponentScore > score) winnerId = isChallenger ? duel.challenged_id : duel.challenger_id;
+                updateData.status = 'completed';
+                updateData.winner_id = winnerId;
+            }
+
+            await sb.from('duels').update(updateData).eq('id', currentDuelId);
+            alert(`Score ${score} soumis !`);
+            document.getElementById('gameOverScreen').style.display = 'none';
+        } catch (e) {
+            alert('Erreur: ' + e.message);
+        }
+    }
+    </script>
+</body>
+</html>

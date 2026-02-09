@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/supabase_service.dart';
 import '../../services/duel_service.dart';
@@ -10,6 +12,7 @@ import '../widgets/candy_ui.dart';
 import 'menu_screen.dart';
 import 'leaderboard_screen.dart';
 import 'game_screen.dart';
+import 'duel_lobby_screen.dart';
 import 'chat_screen.dart';
 import 'messages_screen.dart';
 import '../../services/message_service.dart';
@@ -54,15 +57,65 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
   // Timer pour mise à jour du statut online
   Timer? _onlineStatusTimer;
 
+  // Timer pour mouvement des bots (connexion/déconnexion en live)
+  Timer? _botMovementTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setupAnimations();
+    _checkPendingBotCompletion();
     _loadData();
     _setupRealtimeSubscriptions();
     _startAutoRefresh();
     _startOnlineStatusUpdates();
+    _startBotMovement();
+  }
+
+  /// Vérifie si un bot doit finir sa partie (soumission différée)
+  Future<void> _checkPendingBotCompletion() async {
+    final prefs = await SharedPreferences.getInstance();
+    final duelId = prefs.getString('pending_bot_duel_id');
+    if (duelId == null) return;
+
+    final finishAt = prefs.getInt('pending_bot_finish_at') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (now >= finishAt) {
+      // Le temps est écoulé, soumettre le score du bot maintenant
+      final opponentId = prefs.getString('pending_bot_opponent_id') ?? '';
+      final botScore = prefs.getInt('pending_bot_score') ?? 0;
+      final botTime = prefs.getInt('pending_bot_time') ?? 60;
+
+      try {
+        await duelService.submitScore(
+          duelId: duelId,
+          playerId: opponentId,
+          score: botScore,
+          timeInSeconds: botTime,
+        );
+      } catch (e) {
+        print('Erreur soumission bot différée: $e');
+      }
+
+      // Nettoyer
+      await prefs.remove('pending_bot_duel_id');
+      await prefs.remove('pending_bot_opponent_id');
+      await prefs.remove('pending_bot_score');
+      await prefs.remove('pending_bot_time');
+      await prefs.remove('pending_bot_finish_at');
+    } else {
+      // Pas encore le moment, planifier pour plus tard
+      final remaining = finishAt - now;
+      Timer(Duration(milliseconds: remaining), () {
+        if (mounted) {
+          _checkPendingBotCompletion();
+          // Recharger les données pour voir le résultat
+          _loadData();
+        }
+      });
+    }
   }
 
   /// Démarre les mises à jour du statut online toutes les 30 secondes
@@ -78,6 +131,23 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
       if (mounted) {
         friendService.updateOnlineStatus(playerId);
       }
+    });
+  }
+
+  /// Fait bouger les bots en live : un bot se connecte ou se déconnecte toutes les 15-40s
+  void _startBotMovement() {
+    _scheduleBotMovement();
+  }
+
+  void _scheduleBotMovement() {
+    if (!mounted) return;
+    // Prochain mouvement dans 15-40 secondes (aléatoire)
+    final delay = 15 + Random().nextInt(26);
+    _botMovementTimer = Timer(Duration(seconds: delay), () {
+      if (!mounted) return;
+      friendService.randomBotToggle();
+      // Planifier le prochain mouvement
+      _scheduleBotMovement();
     });
   }
 
@@ -200,8 +270,14 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
           );
 
           if (nowActive) {
-            // Le défi a été accepté !
-            _showDuelAcceptedNotification(oldDuel);
+            // Le défi a été accepté ! Vérifier si c'est un duel live
+            final freshDuel = await duelService.getDuel(oldChallengeId);
+            if (freshDuel != null && freshDuel.isLive) {
+              // Duel live : naviguer directement vers le lobby
+              _navigateToLobby(freshDuel);
+            } else {
+              _showDuelAcceptedNotification(oldDuel);
+            }
           } else {
             // Le défi a été refusé
             _showDuelDeclinedNotification(oldDuel);
@@ -490,6 +566,8 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
     _refreshTimer?.cancel();
     // Annuler le timer de statut online
     _onlineStatusTimer?.cancel();
+    // Annuler le timer de mouvement des bots
+    _botMovementTimer?.cancel();
     // Mettre offline avant de quitter
     final playerId = supabaseService.playerId;
     if (playerId != null) {
@@ -631,43 +709,142 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
     );
 
     if (duel != null && mounted) {
-      // Afficher confirmation - on ne joue PAS encore, on attend que l'adversaire accepte
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Défi envoyé à ${player.username} ! Tu pourras jouer quand il aura accepté.'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      // Recharger les données pour afficher le défi dans "DÉFIS ENVOYÉS"
-      _loadData();
+      // Vérifier si l'adversaire est un bot (faux profil)
+      final isBot = await duelService.isBot(player.id);
+
+      if (isBot) {
+        // BOT : auto-accepter et lancer directement la partie
+        await duelService.acceptDuelLive(duel.id);
+
+        if (mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => GameScreen(
+                duelSeed: duel.seed,
+                duelId: duel.id,
+                opponentId: player.id,
+                opponentName: player.username,
+                opponentPhotoUrl: player.photoUrl,
+                isBotDuel: true,
+              ),
+            ),
+          );
+          if (mounted) _loadData();
+        }
+      } else {
+        // VRAI JOUEUR : attendre qu'il accepte
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Défi envoyé à ${player.username} ! Tu pourras jouer quand il aura accepté.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        _loadData();
+      }
     }
   }
 
   Future<void> _acceptDuel(Duel duel) async {
-    final accepted = await duelService.acceptDuel(duel.id);
-    if (accepted && mounted) {
-      // Envoyer notification au challenger que son défi a été accepté
-      await NotificationService.sendDuelAccepted(
-        challengerId: duel.challengerId,
-        accepterName: supabaseService.userName ?? 'Quelqu\'un',
-      );
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
 
-      // Lancer la partie avec le seed du duel
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => GameScreen(
-            duelSeed: duel.seed,
-            duelId: duel.id,
-            opponentId: duel.challengerId,
-            opponentName: duel.challengerName,
-            opponentPhotoUrl: duel.challengerPhotoUrl,
+    // Vérifier si le challenger est en ligne
+    final isOpponentOnline = await _checkPlayerOnline(duel.challengerId);
+
+    if (isOpponentOnline) {
+      // MODE TEMPS RÉEL : lobby → countdown → jeu simultané
+      final accepted = await duelService.acceptDuelLive(duel.id);
+      if (accepted && mounted) {
+        await NotificationService.sendDuelAccepted(
+          challengerId: duel.challengerId,
+          accepterName: supabaseService.userName ?? 'Quelqu\'un',
+        );
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DuelLobbyScreen(
+              duel: duel,
+              myPlayerId: playerId,
+              opponentId: duel.challengerId,
+              opponentName: duel.challengerName,
+              opponentPhotoUrl: duel.challengerPhotoUrl,
+              myName: supabaseService.userName,
+              myPhotoUrl: supabaseService.userAvatar,
+            ),
           ),
+        );
+        if (mounted) _loadData();
+      }
+    } else {
+      // MODE ASYNC : comportement existant
+      final accepted = await duelService.acceptDuel(duel.id);
+      if (accepted && mounted) {
+        await NotificationService.sendDuelAccepted(
+          challengerId: duel.challengerId,
+          accepterName: supabaseService.userName ?? 'Quelqu\'un',
+        );
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GameScreen(
+              duelSeed: duel.seed,
+              duelId: duel.id,
+              opponentId: duel.challengerId,
+              opponentName: duel.challengerName,
+              opponentPhotoUrl: duel.challengerPhotoUrl,
+            ),
+          ),
+        );
+        if (mounted) _loadData();
+      }
+    }
+  }
+
+  /// Naviguer vers le lobby pour un duel live (appelé pour le challenger)
+  void _navigateToLobby(Duel duel) {
+    final playerId = supabaseService.playerId;
+    if (playerId == null || !mounted) return;
+
+    // Fermer toute notification en cours
+    ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DuelLobbyScreen(
+          duel: duel,
+          myPlayerId: playerId,
+          opponentId: duel.challengedId,
+          opponentName: duel.challengedName,
+          opponentPhotoUrl: duel.challengedPhotoUrl,
+          myName: supabaseService.userName,
+          myPhotoUrl: supabaseService.userAvatar,
         ),
-      );
-      // Recharger les données au retour
+      ),
+    ).then((_) {
       if (mounted) _loadData();
+    });
+  }
+
+  /// Vérifie si un joueur est en ligne (last_seen_at < 60s)
+  Future<bool> _checkPlayerOnline(String playerId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('players')
+          .select('last_seen_at')
+          .eq('id', playerId)
+          .single();
+      if (response['last_seen_at'] != null) {
+        final lastSeen = DateTime.parse(response['last_seen_at']);
+        return DateTime.now().toUtc().difference(lastSeen).inSeconds < 60;
+      }
+      return false;
+    } catch (e) {
+      return false;
     }
   }
 

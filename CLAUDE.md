@@ -1101,12 +1101,83 @@ if (_score > _highScore) {
 
 ---
 
-## Fichiers Modifiés (8 Février)
+## Session du 8 Février 2026 - Partie 2 : Audio & Boutons Game Over
+
+### 5. Bouton Mute/Unmute Musique
+
+#### Implémentation dans `audio_service.dart`
+- Ajout de `bool _isMuted = false` et getter `isMuted`
+- `toggleMute()` : met le volume des players musique à 0 (muted) ou restaure les volumes originaux
+- `setMuted(bool)` : méthode utilitaire
+- **Important** : le mute ne coupe que la **musique** (intro + game), les **effets sonores** (place, combo, explosion) continuent de jouer
+
+#### Bouton visuel dans `game_screen.dart`
+- **Position** : en haut à droite, sous le score BEST
+- **Apparence** : cercle 40px, bordure blanche
+  - **Rose/fuchsia** quand le son est actif (icône `volume_up`)
+  - **Gris** quand le son est coupé (icône `volume_off`)
+- Appelle `audioService.toggleMute()` au tap
+
+### 6. Changement Musique de Jeu
+
+- Nouveau fichier `assets/sounds/music.mp3` remplacé (même nom)
+- Le code pointait déjà vers `sounds/music.mp3` → aucune modification nécessaire
+
+### 7. Correction Son de Placement (place.mp3)
+
+#### Problème
+- Le nouveau son `place.mp3` n'était pas entendu
+- **Cause** : `game_screen.dart` ligne 303 utilisait son propre `_placePlayer` local avec l'ancien fichier `place.mp4`
+- Le `audioService` avait été corrigé mais le player local du game_screen non
+
+#### Solution
+- `_placePlayer.play(AssetSource('sounds/place.mp4'))` → `_placePlayer.play(AssetSource('sounds/place.mp3'))`
+- Également corrigé dans `audio_service.dart` : `sounds/place.mp4` → `sounds/place.mp3`
+
+### 8. Boutons Game Over - Deuxième correction (dépassement)
+
+#### Problème persistant
+- Les boutons QUITTER et REJOUER dépassaient encore du cadre rose Game Over
+- Visible sur screenshot : REJOUER coupé à droite
+
+#### Solution - Layout adaptatif avec Expanded
+```dart
+// AVANT : Row avec MainAxisSize.min (pas de contrainte de largeur)
+Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [_buildCandyButton(...), SizedBox(width: 15), _buildCandyButton(...)],
+)
+
+// APRÈS : Row avec Expanded (boutons se partagent l'espace)
+Row(
+  children: [
+    Expanded(child: _buildCandyButton(...)),
+    SizedBox(width: 12),
+    Expanded(child: _buildCandyButton(...)),
+  ],
+)
+```
+
+#### Réduction supplémentaire des tailles
+```dart
+// Avant → Après
+padding: horizontal: 14, vertical: 10 → horizontal: 10, vertical: 8
+icon size: 18 → 15
+font size: 14 → 12
+letter spacing: 1.2 → 1.0
+SizedBox width: 8 → 6
+```
+
+---
+
+## Fichiers Modifiés (8 Février - Partie 2)
 
 | Fichier | Modification |
 |---------|-------------|
-| `lib/ui/screens/game_screen.dart` | Boutons plus petits + Best score temps réel |
-| `pubspec.yaml` | Version 1.0.0+21 |
+| `lib/services/audio_service.dart` | Ajout `_isMuted`, `toggleMute()` (musique seulement), `setMuted()`, correction `place.mp4` → `place.mp3` |
+| `lib/ui/screens/game_screen.dart` | Bouton mute, correction `place.mp3`, boutons Game Over `Expanded` + tailles réduites |
+| `assets/sounds/music.mp3` | Nouveau fichier musique de jeu |
+| `assets/sounds/place.mp3` | Nouveau son de placement (remplacé 2 fois) |
 
 ---
 
@@ -1115,13 +1186,383 @@ if (_score > _highScore) {
 | Build | Version | Contenu | Status |
 |-------|---------|---------|--------|
 | 20 | 1.0.0+20 | Notifications push OneSignal | En attente de vérification |
-| 21 | 1.0.0+21 | Fix boutons + Best score temps réel | À compiler |
+| 21 | 1.0.0+21 | Fix boutons + Best score temps réel | Compilé |
+
+---
+
+## Date: 8 Février 2026 (Suite)
+
+---
+
+## Session du 8 Février 2026 - Partie 3 : Système Bot Intelligent + Simulation En Ligne
+
+### 1. Bot Simulation sur le Téléphone
+
+#### Principe
+Les bots (faux profils) jouent directement sur le téléphone du joueur, sans serveur ni page web ouverte. Quand un joueur défie un faux profil, l'app détecte que c'est un bot et simule l'adversaire localement.
+
+#### Détection des bots
+```dart
+// Dans duel_service.dart
+Future<bool> isBot(String playerId) async {
+  final response = await _client.from('players')
+      .select('device_id').eq('id', playerId).single();
+  final deviceId = response['device_id'] as String?;
+  return deviceId != null && deviceId.startsWith('fake_');
+}
+```
+
+#### Flow du duel bot
+1. Joueur clique DÉFIER sur un faux profil
+2. `duel_screen.dart` détecte le bot → auto-accepte le duel en mode `live`
+3. Navigue vers `GameScreen` avec `isBotDuel: true`
+4. `GameScreen` simule l'adversaire : countdown, score progressif, game over
+5. Le bot réutilise le même UI que les duels temps réel (`_isRealtimeDuel = true`)
+
+### 2. Algorithme Bot Intelligent
+
+#### Calibration au niveau du joueur
+- **Score typique** = 40-60% du `_highScore` (car le high score = meilleure partie, pas une partie normale)
+- Le bot NE PEUT PAS avoir un score irréaliste par rapport au temps joué
+- **Limite** : max 25 pts/seconde (vérifié avec `_botGameOverTime * 25`)
+
+#### Décision Win/Lose
+| Scénario | Probabilité | Score bot | Durée |
+|----------|-------------|-----------|-------|
+| Bot PERD | 45% | 40-80% du score typique | 40s-120s |
+| Bot GAGNE | 45% | 110-150% du score typique | 80s-220s |
+| Match serré | 10% | 85-115% du score typique | 60s-180s |
+
+#### Score par paliers réalistes (bursts)
+Le score monte par "bursts" qui simulent de vraies lignes complétées, pas une courbe lisse :
+
+| Phase du jeu | Lignes | Points par burst | Pause entre bursts |
+|-------------|--------|------------------|--------------------|
+| 0-25% (début) | 1 seule | 100-250 | 8-18 secondes |
+| 25-50% | 1-2 | 100-550 | 5-14 secondes |
+| 50-75% | 1-3 | 100-900 | 5-14 secondes |
+| 75-100% (fin) | 1-4 | 100-1500 | 3-10 secondes |
+
+**Première ligne** : entre 12 et 22 secondes (réaliste, un vrai joueur met du temps à placer ses premières pièces)
+
+#### Le bot peut finir AVANT le joueur
+- Quand `_botWillLose = true`, le bot a son game over entre 40s et 120s
+- Le joueur voit le score de l'adversaire passer en rouge ("TERMINÉ" dans le label)
+- Le joueur continue à jouer normalement
+
+### 3. Soumission Différée du Score Bot
+
+#### Problème initial
+Quand le joueur quittait pendant l'attente, le score du bot était soumis immédiatement → le résultat apparaissait en 3 secondes (suspect)
+
+#### Solution : Système de soumission différée
+1. **Pendant le jeu** : seul le score du joueur est soumis à la DB quand il perd
+2. **Si le bot finit pendant le jeu** : son score est soumis normalement via le timer
+3. **Si le joueur quitte avant** : les infos du bot sont sauvegardées dans `SharedPreferences` :
+   - `pending_bot_duel_id`, `pending_bot_opponent_id`
+   - `pending_bot_score` (score projeté = actuel + 10-20 pts/s pendant le temps restant)
+   - `pending_bot_finish_at` (timestamp = maintenant + 30s à 2min)
+4. **Au retour sur Menu ou Duels** : vérification via `_checkPendingBotCompletion()`
+   - Si le temps est écoulé → soumet le score du bot → résultat visible
+   - Sinon → planifie un Timer pour le moment exact
+
+### 4. Simulation Bots En Ligne
+
+#### Problème
+Tous les faux profils apparaissaient hors ligne (pastille rouge) car leur `last_seen_at` n'était jamais mis à jour.
+
+#### Solution : 3 niveaux de simulation
+
+**Niveau 1 : Rotation au démarrage** (`menu_screen.dart`)
+- À l'ouverture de l'app : 20-50% des bots mis "en ligne" aléatoirement (min 1, max 8)
+- Leur `last_seen_at` est varié (0-30 secondes dans le passé)
+- Rafraîchissement toutes les 45 secondes pour maintenir le statut
+- Rotation complète toutes les 3-5 minutes (change le groupe de bots connectés)
+
+**Niveau 2 : Mouvement en live** (`duel_screen.dart`)
+- Toutes les 15-40 secondes, UN bot se connecte ou se déconnecte
+- Auto-équilibrage : si <15% en ligne → 85% chance de connexion, si >45% → 70% chance de déconnexion
+- La liste "En Ligne" se met à jour en temps réel grâce au channel Supabase Realtime sur `last_seen_at`
+
+**Niveau 3 : Maintenance** (`friend_service.dart`)
+- `simulateBotOnlineStatus()` : rotation complète des bots en ligne
+- `refreshBotOnlineStatus()` : rafraîchit le `last_seen_at` des bots actuels
+- `randomBotToggle()` : connecte ou déconnecte UN bot aléatoire
+
+### 5. Refonte Bandeau Duel (Game Screen)
+
+#### Avant
+- Gauche : photo adversaire + nom + "EN DIRECT"
+- Droite : score adversaire (petit) + mon score (petit)
+
+#### Après
+- **Gauche** : ma photo (bordure dorée) + mon prénom sous la photo + mon score (gros, doré)
+- **Centre** : VS (gras, italique)
+- **Droite** : score adversaire (gros, rouge) + prénom adversaire sous la photo + photo adversaire (bordure rouge)
+- Photos 38px, scores fontSize 20, prénoms tronqués à 8 caractères
+
+### 6. Bug Fix : Score Bot Irréaliste
+
+#### Problème
+Bot faisait 35069 en 3:03 alors que le joueur faisait 5290 en 3:53 (6x plus de score en 45s de moins)
+
+#### Causes
+1. `playerLevel = _highScore` → utilisait le record absolu au lieu d'un score typique
+2. Ratio bot gagnant jusqu'à 170% du high score → scores astronomiques
+3. Première ligne à 2-5s → beaucoup trop tôt
+4. Pas de limite de score/seconde
+
+#### Corrections
+1. Score typique = 40-60% du high score (pas 100%)
+2. Ratio bot gagnant = 110-150% du score typique
+3. Première ligne à 12-22 secondes
+4. Bursts progressifs (petits au début, gros en fin de partie)
+5. Limite : max 25 pts/seconde
+
+---
+
+## Fichiers Modifiés (8 Février - Partie 3)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/ui/screens/game_screen.dart` | Bot intelligent (algorithme, bursts, soumission différée), refonte bandeau duel (photos+prénoms+VS) |
+| `lib/ui/screens/duel_screen.dart` | `_checkPendingBotCompletion()`, `_startBotMovement()` (bots en live) |
+| `lib/ui/screens/menu_screen.dart` | `_startBotOnlineSimulation()`, `_checkPendingBotCompletion()`, rotation bots |
+| `lib/services/friend_service.dart` | `simulateBotOnlineStatus()`, `refreshBotOnlineStatus()`, `randomBotToggle()` |
+| `lib/services/duel_service.dart` | `isBot()`, `acceptDuelLive()`, `fallbackToAsync()` |
+| `admin/index.html` | Lien vers bot-auto.html |
+
+---
+
+## Variables Bot dans game_screen.dart
+
+```dart
+bool _isBotDuel = false;
+Timer? _botScoreTimer;
+int _botFinalScore = 0;       // Score final calculé
+int _botDuration = 0;         // Durée totale du bot
+int _botCurrentScore = 0;     // Score affiché actuellement
+DateTime? _botStartTime;      // Début de la simulation
+bool _botFinished = false;    // Le bot a terminé
+bool _botWillLose = false;    // Le bot va perdre (game over avant le joueur)
+int _botGameOverTime = 0;     // Quand le bot aura son game over
+List<_BotScoreBurst> _botScoreBursts = [];  // Bursts de score planifiés
+```
+
+---
+
+---
+
+## Date: 8 Février 2026 (Suite 2)
+
+---
+
+## Session du 8 Février 2026 - Partie 4 : Système de Prénom + Corrections UI
+
+### 1. Dialogue de Prénom au Premier Lancement
+
+#### Problème
+Tous les joueurs anonymes (mode "Jouer sans compte") étaient enregistrés avec le nom "Joueur" dans la base de données. Si 200 personnes se connectent, elles s'appellent toutes "Joueur".
+
+#### Solution : Dialogue de prénom obligatoire
+- **Écran de connexion** (`auth_screen.dart`) : quand le joueur clique "Jouer sans compte", un dialogue candy apparaît :
+  - Titre : "Comment tu t'appelles ?"
+  - Sous-titre : "Les autres joueurs verront ce nom"
+  - Champ texte : max 15 caractères, auto-capitalisation
+  - Bouton : "C'est parti !"
+- Le prénom est sauvegardé dans **SharedPreferences** (`userName`) ET dans la **base de données** (`players.username`)
+- Le dialogue est `barrierDismissible: false` → le joueur DOIT entrer un prénom
+
+#### Flow complet
+1. App ouvre → écran de connexion (Google / Apple / Sans compte)
+2. Joueur clique "Jouer sans compte" → dialogue prénom
+3. Tape son prénom → "C'est parti !" → Menu principal
+4. Lancements suivants → Menu directement (session existante + prénom sauvé)
+
+#### Cas des anciens joueurs anonymes sans prénom
+- Si un joueur anonyme arrive au menu sans prénom sauvé dans SharedPreferences → redirigé automatiquement vers l'écran de connexion
+- Il peut alors choisir Google/Apple OU "Sans compte" avec saisie du prénom
+
+### 2. Prénom Non Modifiable
+
+#### Règle
+Un joueur anonyme ne peut PAS changer son prénom après l'avoir mis.
+
+#### Implémentation dans `profile_screen.dart`
+- `onTap: null` sur le GestureDetector du nom (ligne 223)
+- Texte "Tap pour modifier" + icône crayon remplacés par "Joueur libre"
+- Les joueurs Google gardent l'affichage "Compte Google connecté"
+
+### 3. Lecture du Prénom sur le Menu
+
+#### Problème
+Le menu affichait toujours "Joueur" en haut à gauche même après avoir saisi le prénom.
+
+#### Cause
+`_loadUserData()` dans `menu_screen.dart` ne lisait le nom que depuis `supabaseService.userName` (utilisateurs Google). Pour les anonymes, le nom restait "Joueur" par défaut.
+
+#### Solution
+Ajout d'un fallback dans `_loadUserData()` :
+```dart
+} else {
+  final prefs = await SharedPreferences.getInstance();
+  final savedName = prefs.getString('userName');
+  if (savedName != null && savedName.isNotEmpty && mounted) {
+    setState(() => _userName = savedName);
+  } else if (mounted) {
+    // Pas de prénom → renvoyer vers l'écran de connexion
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const AuthScreen()),
+      (route) => false,
+    );
+  }
+}
+```
+
+### 4. Texte Invisible dans le Champ de Saisie
+
+#### Problème
+Quand le joueur tapait son prénom, le texte était invisible (blanc sur fond blanc).
+
+#### Cause
+Le `TextField` n'avait pas de couleur définie → prenait la couleur du thème dark (blanc).
+
+#### Solution
+Ajout de `color: Color(0xFF880E4F)` (rose foncé) dans le style du TextField :
+```dart
+style: const TextStyle(
+  fontSize: 18,
+  fontWeight: FontWeight.bold,
+  color: Color(0xFF880E4F),  // ← Rose foncé bien visible sur fond blanc
+),
+```
+
+---
+
+## Fichiers Modifiés (8 Février - Partie 4)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/ui/screens/auth_screen.dart` | Dialogue prénom dans `_showNameDialog()`, couleur texte rose foncé, sauvegarde DB via `getOrCreatePlayer()` |
+| `lib/ui/screens/menu_screen.dart` | Lecture prénom SharedPreferences, redirection AuthScreen si pas de prénom, suppression `_showNameDialog()` |
+| `lib/ui/screens/profile_screen.dart` | `onTap: null`, "Joueur libre" au lieu de "Tap pour modifier" |
+
+---
+
+---
+
+## Date: 8 Février 2026 (Suite 3)
+
+---
+
+## Session du 8 Février 2026 - Partie 5 : Corrections Session Anonyme + Admin
+
+### 1. Session Anonyme Non Persistée au Relancement
+
+#### Problème
+Quand un joueur anonyme fermait et rouvrait l'app, il était renvoyé à l'écran de connexion et devait re-saisir son prénom à chaque fois.
+
+#### Cause
+Dans `main.dart`, la variable `isLoggedIn` ne vérifiait que `supabaseService.isLoggedIn` (session Google/Apple). Pour les joueurs anonymes, `_currentUser` est toujours `null` → `isLoggedIn = false` → renvoi vers AuthScreen.
+
+#### Solution
+Ajout d'une vérification SharedPreferences dans `main.dart` :
+```dart
+// Vérifier aussi si un joueur anonyme a déjà mis son prénom
+if (!hasSession) {
+  final prefs = await SharedPreferences.getInstance();
+  final savedName = prefs.getString('userName');
+  if (savedName != null && savedName.isNotEmpty) {
+    hasSession = true;
+  }
+}
+```
+Si un prénom existe dans SharedPreferences → le joueur va directement au menu.
+
+### 2. Joueur Anonyme Invisible dans les Duels
+
+#### Problème
+Après connexion en mode "sans inscription", l'onglet Duels était vide : aucun joueur visible dans aucun onglet (Duels, Amis, En Ligne, Tous).
+
+#### Cause
+Au relancement de l'app, `menu_screen._loadUserData()` lisait le prénom depuis SharedPreferences mais n'appelait PAS `supabaseService.getOrCreatePlayer()`. Sans cet appel, `playerId` restait `null` et toutes les requêtes (duels, amis, joueurs) retournaient rien.
+
+#### Solution
+Ajout de `getOrCreatePlayer()` dans le bloc anonyme de `_loadUserData()` :
+```dart
+if (savedName != null && savedName.isNotEmpty && mounted) {
+  // Initialiser le joueur dans la base de données
+  await supabaseService.getOrCreatePlayer(savedName);
+  setState(() {
+    _userName = savedName;
+  });
+}
+```
+
+### 3. Admin : Suppression de Vrais Profils Impossible
+
+#### Problème
+La fonction `deleteUser()` dans le panel admin ne pouvait pas supprimer les vrais profils. Erreur silencieuse.
+
+#### Cause
+La suppression ne nettoyait que `player_stats` puis essayait de supprimer le joueur. Mais les tables `duels`, `friends`, `messages`, `typing_status` avaient des contraintes de clé étrangère qui bloquaient la suppression.
+
+#### Solution
+Suppression en cascade de toutes les données liées dans l'ordre :
+```javascript
+// 1. Messages envoyés et reçus
+await supabaseClient.from('messages').delete()
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+// 2. Statut de frappe
+await supabaseClient.from('typing_status').delete()
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+// 3. Duels (challenger ou challenged)
+await supabaseClient.from('duels').delete()
+    .or(`challenger_id.eq.${userId},challenged_id.eq.${userId}`);
+// 4. Amis (dans les deux sens)
+await supabaseClient.from('friends').delete()
+    .or(`player_id.eq.${userId},friend_id.eq.${userId}`);
+// 5. Stats
+await supabaseClient.from('player_stats').delete()
+    .eq('player_id', userId);
+// 6. Enfin le joueur
+await supabaseClient.from('players').delete()
+    .eq('id', userId);
+```
+
+---
+
+## Fichiers Modifiés (8 Février - Partie 5)
+
+| Fichier | Modification |
+|---------|-------------|
+| `lib/main.dart` | Import SharedPreferences, vérification prénom anonyme pour skip AuthScreen |
+| `lib/ui/screens/menu_screen.dart` | Appel `getOrCreatePlayer(savedName)` pour initialiser le playerId anonyme |
+| `admin/admin.js` | `deleteUser()` supprime messages, typing_status, duels, friends, stats avant le joueur |
+
+---
+
+## Flow Complet Joueur Anonyme (Résumé Final)
+
+| Étape | Action | Résultat |
+|-------|--------|----------|
+| 1er lancement | App ouvre | → AuthScreen (Google / Apple / Sans compte) |
+| Clic "Sans compte" | Dialogue prénom | → Saisie obligatoire |
+| "C'est parti !" | Sauvegarde | SharedPreferences + DB → MenuScreen |
+| 2ème lancement | App ouvre | main.dart détecte prénom → MenuScreen direct |
+| Menu charge | `_loadUserData()` | `getOrCreatePlayer()` → playerId initialisé |
+| Duels/Amis | Requêtes DB | Fonctionnent car playerId existe |
 
 ---
 
 ## Prochaines Étapes
 
 1. ~~**Notifications push**~~ - FAIT - OneSignal configuré
-2. **Tester les notifications** - Envoyer un message et vérifier réception
-3. **Résultat duel VS** - Écran comparatif après duel
-4. **Page Paramètres** - Son, musique, vibrations, langue
+2. ~~**Système Bot intelligent**~~ - FAIT - Simulation locale, score réaliste, win/lose
+3. ~~**Bots en ligne**~~ - FAIT - Simulation présence aléatoire
+4. ~~**Prénom obligatoire**~~ - FAIT - Dialogue au premier lancement, non modifiable
+5. ~~**Session anonyme persistée**~~ - FAIT - SharedPreferences + getOrCreatePlayer
+6. ~~**Admin suppression profils**~~ - FAIT - Cascade complète des données liées
+7. **Tester les notifications** - Envoyer un message et vérifier réception
+8. **Page Paramètres** - Son, musique, vibrations, langue
+9. **Push GitHub + Build Codemagic iOS** - Pousser les changements pour TestFlight

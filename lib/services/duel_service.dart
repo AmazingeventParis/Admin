@@ -54,6 +54,32 @@ class DuelService {
     }
   }
 
+  /// Accepte un défi en mode live (temps réel simultané)
+  Future<bool> acceptDuelLive(String duelId) async {
+    try {
+      await _client.from('duels').update({
+        'status': 'live',
+      }).eq('id', duelId);
+      return true;
+    } catch (e) {
+      print('Erreur acceptation duel live: $e');
+      return false;
+    }
+  }
+
+  /// Fallback vers mode async si déconnexion pendant un duel live
+  Future<bool> fallbackToAsync(String duelId) async {
+    try {
+      await _client.from('duels').update({
+        'status': 'active',
+      }).eq('id', duelId);
+      return true;
+    } catch (e) {
+      print('Erreur fallback async: $e');
+      return false;
+    }
+  }
+
   /// Refuse un défi de duel - supprime complètement le duel
   Future<bool> declineDuel(String duelId) async {
     try {
@@ -237,7 +263,7 @@ class DuelService {
             challenged:players!duels_challenged_id_fkey(id, username, photo_url)
           ''')
           .or('challenger_id.eq.$playerId,challenged_id.eq.$playerId')
-          .eq('status', 'active')
+          .or('status.eq.active,status.eq.live')
           .order('created_at', ascending: false);
 
       return _parseDuelsWithPlayers(response);
@@ -287,6 +313,21 @@ class DuelService {
     } catch (e) {
       print('Erreur récupération historique: $e');
       return [];
+    }
+  }
+
+  /// Vérifie si un joueur est un faux profil (bot)
+  Future<bool> isBot(String playerId) async {
+    try {
+      final response = await _client
+          .from('players')
+          .select('device_id')
+          .eq('id', playerId)
+          .single();
+      final deviceId = response['device_id'] as String?;
+      return deviceId != null && deviceId.startsWith('fake_');
+    } catch (e) {
+      return false;
     }
   }
 

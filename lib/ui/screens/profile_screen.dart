@@ -220,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                       // Avatar et nom
                       GestureDetector(
-                        onTap: _isGoogleUser ? null : _showEditNameDialog,
+                        onTap: null, // Le prénom ne peut pas être changé
                         child: Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
@@ -282,22 +282,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         ],
                                       ),
                                     ] else ...[
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.edit,
-                                            color: Colors.white.withOpacity(0.7),
-                                            size: 16,
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            'Tap pour modifier',
-                                            style: TextStyle(
-                                              color: Colors.white.withOpacity(0.7),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
+                                      Text(
+                                        'Joueur libre',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.7),
+                                          fontSize: 11,
+                                        ),
                                       ),
                                     ],
                                   ],
