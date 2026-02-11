@@ -25,6 +25,7 @@ class SupabaseService {
   String? _playerId;
   String? _deviceId;
   User? _currentUser;
+  String? _appleUserName;
 
   /// Initialise Supabase
   static Future<void> initialize() async {
@@ -48,10 +49,16 @@ class SupabaseService {
 
   /// Récupère le prénom de l'utilisateur connecté (seulement le premier mot)
   String? get userName {
+    // Pour les utilisateurs Google
     final fullName = _currentUser?.userMetadata?['full_name'] as String?;
-    if (fullName == null || fullName.isEmpty) return null;
-    // Ne garder que le prénom (premier mot)
-    return fullName.split(' ').first;
+    if (fullName != null && fullName.isNotEmpty) {
+      return fullName.split(' ').first;
+    }
+    // Pour les utilisateurs Apple
+    if (_appleUserName != null && _appleUserName!.isNotEmpty) {
+      return _appleUserName;
+    }
+    return null;
   }
 
   /// Récupère l'avatar de l'utilisateur connecté
@@ -144,16 +151,21 @@ class SupabaseService {
       if (_currentUser != null) {
         // Stocker le nom Apple (il n'est fourni qu'à la première connexion)
         String? appleFullName;
+        final prefs = await SharedPreferences.getInstance();
         if (credential.givenName != null || credential.familyName != null) {
           appleFullName = '${credential.givenName ?? ''} ${credential.familyName ?? ''}'.trim();
           // Sauvegarder pour les futures connexions
-          final prefs = await SharedPreferences.getInstance();
           await prefs.setString('apple_user_name', appleFullName);
         } else {
           // Récupérer le nom sauvegardé
-          final prefs = await SharedPreferences.getInstance();
           appleFullName = prefs.getString('apple_user_name');
         }
+
+        // Stocker le prénom pour le getter userName
+        _appleUserName = appleFullName?.split(' ').first ?? 'Joueur';
+
+        // Sauvegarder aussi sous 'userName' pour que le menu le retrouve
+        await prefs.setString('userName', _appleUserName!);
 
         // Créer ou mettre à jour le joueur
         await _createOrUpdatePlayerFromApple(appleFullName);
@@ -228,6 +240,11 @@ class SupabaseService {
       await client.auth.signOut();
       _currentUser = null;
       _playerId = null;
+      _appleUserName = null;
+      // Nettoyer les préférences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('userName');
+      await prefs.remove('apple_user_name');
       // Réinitialiser les stats locales pour le prochain utilisateur
       await statsService.init();
       await statsService.resetAllStats();
@@ -240,7 +257,18 @@ class SupabaseService {
   Future<void> checkSession() async {
     _currentUser = client.auth.currentUser;
     if (_currentUser != null) {
-      await _createOrUpdatePlayerFromAuth();
+      // Détecter si c'est un utilisateur Apple ou Google
+      final provider = _currentUser!.appMetadata['provider'] as String?;
+      if (provider == 'apple') {
+        // Utilisateur Apple : charger le nom sauvegardé
+        final prefs = await SharedPreferences.getInstance();
+        final appleFullName = prefs.getString('apple_user_name');
+        _appleUserName = appleFullName?.split(' ').first ?? 'Joueur';
+        await _createOrUpdatePlayerFromApple(appleFullName);
+      } else {
+        // Utilisateur Google
+        await _createOrUpdatePlayerFromAuth();
+      }
       // Sauvegarder le token FCM maintenant que playerId est défini
       await NotificationService.updateTokenAfterLogin();
       // Charger les stats du cloud pour ce compte
