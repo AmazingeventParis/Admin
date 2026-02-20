@@ -37,9 +37,14 @@
                 (Google Authenticator, Authy, Microsoft Authenticator...)
             </p>
             <div class="qr-wrapper">
-                <div id="qr-code"></div>
-                <p class="qr-info">Puis entrez le code a 6 chiffres affiche dans l'app</p>
+                <canvas id="qr-canvas"></canvas>
+                <p class="qr-info" style="margin-top:16px;">Ou entrez cette cle manuellement :</p>
+                <div id="totp-secret-display" style="margin-top:8px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 16px;font-family:monospace;font-size:16px;letter-spacing:3px;color:#58a6ff;word-break:break-all;user-select:all;cursor:pointer;" title="Cliquez pour copier"></div>
+                <p style="color:#484f58;font-size:11px;margin-top:6px;">Cliquez sur la cle pour la copier</p>
             </div>
+            <p style="color:#8b949e;font-size:13px;text-align:center;margin:16px 0 8px;">
+                Puis entrez le code a 6 chiffres affiche dans l'app
+            </p>
             <div class="totp-input-wrapper" id="setup-totp-inputs">
                 <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="0">
                 <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="1">
@@ -71,6 +76,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script src="/js/config.js"></script>
 <script src="/js/login.js"></script>
 </body>

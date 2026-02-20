@@ -150,9 +150,41 @@ async function enrollTOTP() {
 
     currentFactorId = data.id;
 
-    var qrContainer = document.getElementById('qr-code');
-    if (data.totp && data.totp.qr_code) {
-        qrContainer.innerHTML = '<img src="' + data.totp.qr_code + '" alt="QR Code 2FA" width="200" height="200">';
+    // Generate clean PNG QR code with qrcode lib
+    var totpUri = data.totp.uri;
+    var secret = data.totp.secret;
+    var canvas = document.getElementById('qr-canvas');
+
+    try {
+        await QRCode.toCanvas(canvas, totpUri, {
+            width: 260,
+            margin: 2,
+            color: { dark: '#000000', light: '#ffffff' }
+        });
+    } catch(e) {
+        console.error('QR generation error:', e);
+        // Fallback: use Supabase SVG
+        if (data.totp.qr_code) {
+            canvas.style.display = 'none';
+            var img = document.createElement('img');
+            img.src = data.totp.qr_code;
+            img.width = 260;
+            img.height = 260;
+            img.alt = 'QR Code 2FA';
+            canvas.parentNode.insertBefore(img, canvas);
+        }
+    }
+
+    // Show secret key for manual entry
+    var secretDisplay = document.getElementById('totp-secret-display');
+    if (secretDisplay && secret) {
+        secretDisplay.textContent = secret;
+        secretDisplay.addEventListener('click', function() {
+            navigator.clipboard.writeText(secret).then(function() {
+                secretDisplay.style.borderColor = '#3fb950';
+                setTimeout(function() { secretDisplay.style.borderColor = '#30363d'; }, 1500);
+            });
+        });
     }
 }
 
