@@ -145,6 +145,40 @@
             color: #6e7681;
             font-style: italic;
         }
+        .claude-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 10px;
+        }
+        .claude-project {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .claude-project:hover {
+            border-color: #d97706;
+            background: #1a1500;
+        }
+        .claude-project-icon { font-size: 18px; }
+        .claude-project-name {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .claude-project-copy {
+            font-size: 10px;
+            background: #d97706;
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -256,22 +290,80 @@
     <div class="section">
         <div class="section-title">Acces Claude / IA</div>
         <div class="claude-box">
-            <p>Donnez ce lien a votre Claude pour qu'il ait tous les acces infrastructure (serveur, Coolify, Supabase, GitHub).</p>
-            <div class="claude-url">
-                <code>https://infra.swipego.app/api</code>
-                <button onclick="copyUrl(this)">Copier</button>
+            <p>Copiez le lien d'un projet et donnez-le a votre Claude. Il aura tous les acces + le projet ouvert automatiquement.</p>
+            <div class="claude-grid">
+                <div class="claude-project" onclick="copyProject(this, 'kooki')">
+                    <span class="claude-project-icon">💰</span>
+                    <span class="claude-project-name">Kooki</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'cryptosignals')">
+                    <span class="claude-project-icon">📈</span>
+                    <span class="claude-project-name">CryptoSignals</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'freqtrade')">
+                    <span class="claude-project-icon">🤖</span>
+                    <span class="claude-project-name">Freqtrade</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'focusracer')">
+                    <span class="claude-project-icon">📸</span>
+                    <span class="claude-project-name">Focus Racer</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'optitourbooth')">
+                    <span class="claude-project-icon">🎪</span>
+                    <span class="claude-project-name">OptiTourBooth</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'belotte')">
+                    <span class="claude-project-icon">🃏</span>
+                    <span class="claude-project-name">Belotte</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'upload')">
+                    <span class="claude-project-icon">📁</span>
+                    <span class="claude-project-name">Upload Tool</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'alice')">
+                    <span class="claude-project-icon">👧</span>
+                    <span class="claude-project-name">Alice</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
+                <div class="claude-project" onclick="copyProject(this, 'admin')">
+                    <span class="claude-project-icon">⚙️</span>
+                    <span class="claude-project-name">Admin Hub</span>
+                    <span class="claude-project-copy">Copier</span>
+                </div>
             </div>
-            <p class="claude-hint">Dites a votre Claude : "Fetch https://infra.swipego.app/api pour recuperer tous les acces infrastructure"</p>
+            <div class="claude-url" style="margin-top: 16px;">
+                <code>https://infra.swipego.app/api</code>
+                <button onclick="copyAll(this)">Copier infra complete</button>
+            </div>
+            <p class="claude-hint">Dites a votre Claude : "Fetch [le lien copie] pour avoir les acces du projet"</p>
         </div>
     </div>
 </div>
 <script>
-function copyUrl(btn) {
+function copyProject(el, name) {
+    const url = 'https://infra.swipego.app/api/' + name;
+    navigator.clipboard.writeText(url);
+    const btn = el.querySelector('.claude-project-copy');
+    btn.textContent = 'Copie !';
+    btn.style.background = '#238636';
+    setTimeout(() => {
+        btn.textContent = 'Copier';
+        btn.style.background = '';
+    }, 2000);
+}
+function copyAll(btn) {
     navigator.clipboard.writeText('https://infra.swipego.app/api');
     btn.textContent = 'Copie !';
     btn.classList.add('copied');
     setTimeout(() => {
-        btn.textContent = 'Copier';
+        btn.textContent = 'Copier infra complete';
         btn.classList.remove('copied');
     }, 2000);
 }
