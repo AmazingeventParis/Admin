@@ -93,7 +93,14 @@ app.delete('/api/admin/users/:id/mfa', requireAuth, async (req, res) => {
 
   const factors = user.factors || [];
   for (const factor of factors) {
-    await supabaseAdmin.auth.admin.mfa.deleteFactor({ userId: id, factorId: factor.id });
+    // Use REST API directly since SDK has a UUID validation bug
+    await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}/factors/${factor.id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'apikey': SUPABASE_SERVICE_KEY
+      }
+    });
   }
 
   res.json({ success: true });
