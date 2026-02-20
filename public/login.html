@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion — SwipeGo Admin</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="login-wrapper">
+    <div class="login-box">
+        <h1>Swipe<span>Go</span></h1>
+        <p class="subtitle">Administration</p>
+
+        <div id="alert" class="alert"></div>
+
+        <!-- Step 1: Email + Password -->
+        <div id="step-login" class="login-step active">
+            <form id="login-form" autocomplete="on">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" placeholder="admin@swipego.app" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="password">Mot de passe</label>
+                    <input type="password" id="password" name="password" placeholder="Votre mot de passe" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-primary" id="btn-login">Se connecter</button>
+            </form>
+        </div>
+
+        <!-- Step 2: 2FA Setup (first time) -->
+        <div id="step-2fa-setup" class="login-step">
+            <p class="subtitle" style="margin-bottom:16px">Configurez l'authentification a double facteur</p>
+            <p style="color:#8b949e;font-size:13px;text-align:center;margin-bottom:8px;">
+                Scannez ce QR code avec votre application d'authentification
+                (Google Authenticator, Authy, Microsoft Authenticator...)
+            </p>
+            <div class="qr-wrapper">
+                <div id="qr-code"></div>
+                <p class="qr-info">Puis entrez le code a 6 chiffres affiche dans l'app</p>
+            </div>
+            <div class="totp-input-wrapper" id="setup-totp-inputs">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="0">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="1">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="2">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="3">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="4">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="5">
+            </div>
+            <button class="btn-primary" id="btn-verify-setup">Activer la 2FA</button>
+        </div>
+
+        <!-- Step 3: 2FA Verify (subsequent logins) -->
+        <div id="step-2fa-verify" class="login-step">
+            <p class="subtitle" style="margin-bottom:16px">Verification a double facteur</p>
+            <p style="color:#8b949e;font-size:13px;text-align:center;margin-bottom:8px;">
+                Entrez le code a 6 chiffres de votre application d'authentification
+            </p>
+            <div class="totp-input-wrapper" id="verify-totp-inputs">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="0">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="1">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="2">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="3">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="4">
+                <input type="text" class="totp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-index="5">
+            </div>
+            <button class="btn-primary" id="btn-verify-totp">Verifier</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script src="/js/login.js"></script>
+</body>
+</html>

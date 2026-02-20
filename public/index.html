@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — SwipeGo</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- Loading -->
+<div class="page-loading" id="page-loading"><span class="spinner"></span> Chargement...</div>
+
+<!-- Page content (hidden until auth) -->
+<div id="page-content" style="display:none">
+
+    <!-- Navbar -->
+    <nav class="navbar" id="navbar">
+        <a href="/" class="navbar-brand">Swipe<span>Go</span> Admin</a>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/users.html">Utilisateurs</a>
+        </div>
+        <div class="navbar-user">
+            <span id="navbar-email"></span>
+            <button class="btn-logout" onclick="logout()">Deconnexion</button>
+        </div>
+    </nav>
+
+    <!-- Dashboard -->
+    <div class="container">
+        <h1 class="page-title">Swipe<span>Go</span> Admin</h1>
+        <p class="page-subtitle">Tous les projets et outils — un seul endroit</p>
+
+        <!-- Apps -->
+        <div class="section">
+            <div class="section-title">Applications</div>
+            <div class="grid">
+                <a class="card" href="https://crypto.swipego.app" target="_blank">
+                    <div class="card-icon">📈</div>
+                    <div class="card-content">
+                        <div class="card-name">CryptoSignals <span class="badge badge-prod">PROD</span></div>
+                        <div class="card-desc">Bots de trading V1/V2 + Freqtrade. Dashboard temps reel, signaux, paper trading.</div>
+                        <div class="card-url">crypto.swipego.app</div>
+                    </div>
+                </a>
+                <a class="card" href="https://freqtrade.swipego.app" target="_blank">
+                    <div class="card-icon">🤖</div>
+                    <div class="card-content">
+                        <div class="card-name">Freqtrade <span class="badge badge-prod">PROD</span></div>
+                        <div class="card-desc">Bot Freqtrade MEXC Futures. CombinedStrategy EMA + RSI + BB + ADX.</div>
+                        <div class="card-url">freqtrade.swipego.app</div>
+                    </div>
+                </a>
+                <a class="card" href="https://focusracer.swipego.app" target="_blank">
+                    <div class="card-icon">📸</div>
+                    <div class="card-content">
+                        <div class="card-name">Focus Racer <span class="badge badge-prod">PROD</span></div>
+                        <div class="card-desc">Plateforme photo pour evenements. Upload, galeries, photographes.</div>
+                        <div class="card-url">focusracer.swipego.app</div>
+                    </div>
+                </a>
+                <a class="card" href="https://lokashopy.swipego.app" target="_blank">
+                    <div class="card-icon">🛒</div>
+                    <div class="card-content">
+                        <div class="card-name">Lokashopy <span class="badge badge-prod">PROD</span></div>
+                        <div class="card-desc">Comparateur de prix. Deploye sur ancien serveur.</div>
+                        <div class="card-url">lokashopy.swipego.app</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Outils -->
+        <div class="section">
+            <div class="section-title">Outils</div>
+            <div class="grid">
+                <a class="card" href="https://upload.swipego.app" target="_blank">
+                    <div class="card-icon">📁</div>
+                    <div class="card-content">
+                        <div class="card-name">Upload Tool <span class="badge badge-tool">TOOL</span></div>
+                        <div class="card-desc">Upload de fichiers pour code-server. Glisser-deposer, Ctrl+V, lien direct.</div>
+                        <div class="card-url">upload.swipego.app</div>
+                    </div>
+                </a>
+                <a class="card" href="https://code.swipego.app" target="_blank">
+                    <div class="card-icon">💻</div>
+                    <div class="card-content">
+                        <div class="card-name">Code Server <span class="badge badge-tool">TOOL</span></div>
+                        <div class="card-desc">VS Code dans le navigateur. Acces distant au code de tous les projets.</div>
+                        <div class="card-url">code.swipego.app</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Infra -->
+        <div class="section">
+            <div class="section-title">Infrastructure</div>
+            <div class="grid">
+                <a class="card" href="https://coolify.swipego.app" target="_blank">
+                    <div class="card-icon">🚀</div>
+                    <div class="card-content">
+                        <div class="card-name">Coolify <span class="badge badge-infra">INFRA</span></div>
+                        <div class="card-desc">PaaS self-hosted. Deployement, monitoring, logs de toutes les apps.</div>
+                        <div class="card-url">coolify.swipego.app</div>
+                    </div>
+                </a>
+                <a class="card" href="https://supabase.swipego.app" target="_blank">
+                    <div class="card-icon">🗄️</div>
+                    <div class="card-content">
+                        <div class="card-name">Supabase <span class="badge badge-infra">INFRA</span></div>
+                        <div class="card-desc">Base de donnees PostgreSQL self-hosted. Dashboard, auth, API REST.</div>
+                        <div class="card-url">supabase.swipego.app</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+(async () => {
+    const session = await checkAuth();
+    if (!session) return;
+    renderNavbar('dashboard');
+    await setNavbarUser();
+    showPage();
+})();
+</script>
+</body>
+</html>

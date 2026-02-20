@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Utilisateurs — SwipeGo Admin</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- Loading -->
+<div class="page-loading" id="page-loading"><span class="spinner"></span> Chargement...</div>
+
+<!-- Page content -->
+<div id="page-content" style="display:none">
+
+    <!-- Navbar -->
+    <nav class="navbar" id="navbar">
+        <a href="/" class="navbar-brand">Swipe<span>Go</span> Admin</a>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/users.html">Utilisateurs</a>
+        </div>
+        <div class="navbar-user">
+            <span id="navbar-email"></span>
+            <button class="btn-logout" onclick="logout()">Deconnexion</button>
+        </div>
+    </nav>
+
+    <div class="container-wide">
+        <div id="alert-users" class="alert"></div>
+
+        <div class="users-header">
+            <h2>Gestion des utilisateurs</h2>
+            <button class="btn-primary" style="width:auto;padding:10px 24px;" onclick="openCreateModal()">
+                + Nouvel utilisateur
+            </button>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>2FA</th>
+                        <th>Cree le</th>
+                        <th>Derniere connexion</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <tr><td colspan="5" style="text-align:center;color:#8b949e;padding:40px;">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Create user -->
+<div class="modal-overlay" id="modal-create">
+    <div class="modal">
+        <h3>Creer un utilisateur</h3>
+        <div id="alert-modal" class="alert"></div>
+        <div class="form-group">
+            <label for="new-email">Email</label>
+            <input type="email" id="new-email" placeholder="utilisateur@email.com">
+        </div>
+        <div class="form-group">
+            <label for="new-password">Mot de passe</label>
+            <input type="password" id="new-password" placeholder="Mot de passe securise">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeCreateModal()">Annuler</button>
+            <button class="btn-primary" id="btn-create-user" onclick="createUser()">Creer</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Reset password -->
+<div class="modal-overlay" id="modal-reset">
+    <div class="modal">
+        <h3>Nouveau mot de passe</h3>
+        <div id="alert-reset" class="alert"></div>
+        <p style="color:#8b949e;font-size:13px;margin-bottom:16px;">Pour : <strong id="reset-email"></strong></p>
+        <div class="form-group">
+            <label for="reset-password">Nouveau mot de passe</label>
+            <input type="password" id="reset-password" placeholder="Nouveau mot de passe">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeResetModal()">Annuler</button>
+            <button class="btn-primary" id="btn-reset-password" onclick="resetPassword()">Modifier</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Confirm delete -->
+<div class="modal-overlay" id="modal-delete">
+    <div class="modal">
+        <h3>Supprimer l'utilisateur</h3>
+        <p style="color:#f85149;font-size:14px;margin-bottom:8px;">Cette action est irreversible.</p>
+        <p style="color:#8b949e;font-size:13px;">Supprimer le compte de <strong id="delete-email"></strong> ?</p>
+        <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeDeleteModal()">Annuler</button>
+            <button class="btn-primary" style="background:#da3634;" id="btn-confirm-delete" onclick="confirmDelete()">Supprimer</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/users.js"></script>
+</body>
+</html>
