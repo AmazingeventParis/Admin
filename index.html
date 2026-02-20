@@ -97,6 +97,54 @@
         .badge-prod { background: #238636; color: #fff; }
         .badge-tool { background: #1f6feb; color: #fff; }
         .badge-infra { background: #8957e5; color: #fff; }
+        .badge-claude { background: #d97706; color: #fff; }
+        .claude-box {
+            background: #161b22;
+            border: 1px solid #d97706;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .claude-box p {
+            font-size: 13px;
+            color: #8b949e;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        .claude-url {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+        }
+        .claude-url code {
+            flex: 1;
+            font-size: 14px;
+            color: #58a6ff;
+            word-break: break-all;
+        }
+        .claude-url button {
+            background: #d97706;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .claude-url button:hover { background: #b45309; }
+        .claude-url button.copied { background: #238636; }
+        .claude-hint {
+            font-size: 12px;
+            color: #6e7681;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -204,7 +252,34 @@
             </a>
         </div>
     </div>
+    <!-- Acces Claude -->
+    <div class="section">
+        <div class="section-title">Acces Claude / IA</div>
+        <div class="claude-box">
+            <p>Donnez ce lien a votre Claude pour qu'il ait tous les acces infrastructure (serveur, Coolify, Supabase, GitHub). Format JSON pour les machines, Markdown pour les humains.</p>
+            <div class="claude-url">
+                <code>https://infra.swipego.app/api</code>
+                <button onclick="copyUrl(this, 'https://infra.swipego.app/api')">Copier JSON</button>
+            </div>
+            <div class="claude-url">
+                <code>https://infra.swipego.app/</code>
+                <button onclick="copyUrl(this, 'https://infra.swipego.app/')">Copier Markdown</button>
+            </div>
+            <p class="claude-hint">Dites a votre Claude : "Fetch https://infra.swipego.app/api pour recuperer tous les acces infrastructure"</p>
+        </div>
+    </div>
 </div>
+<script>
+function copyUrl(btn, url) {
+    navigator.clipboard.writeText(url);
+    btn.textContent = 'Copie !';
+    btn.classList.add('copied');
+    setTimeout(() => {
+        btn.textContent = btn.closest('.claude-url').querySelector('code').textContent.includes('/api') ? 'Copier JSON' : 'Copier Markdown';
+        btn.classList.remove('copied');
+    }, 2000);
+}
+</script>
 </body>
 </html>
 
