@@ -123,12 +123,17 @@
 <script src="/js/config.js"></script>
 <script src="/js/auth.js"></script>
 <script>
-(async () => {
-    const session = await checkAuth();
-    if (!session) return;
-    renderNavbar('dashboard');
-    await setNavbarUser();
-    showPage();
+(async function() {
+    try {
+        var session = await checkAuth();
+        if (!session) return;
+        renderNavbar('dashboard');
+        await setNavbarUser();
+        showPage();
+    } catch(e) {
+        console.error('Init error:', e);
+        window.location.href = '/login.html';
+    }
 })();
 </script>
 </body>
