@@ -116,9 +116,118 @@
                 </a>
             </div>
         </div>
+
+        <!-- Acces Claude par projet -->
+        <div class="section">
+            <div class="section-title">Acces Claude / IA — Par projet</div>
+            <div class="claude-box">
+                <p>Copiez le lien d'un projet et donnez-le a votre Claude. Il aura tous les acces + les infos du projet.</p>
+                <div class="claude-grid">
+                    <div class="claude-project">
+                        <span class="claude-project-icon">💰</span>
+                        <span class="claude-project-name">Kooki</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'kooki')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Kooki" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">📈</span>
+                        <span class="claude-project-name">CryptoSignals</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'cryptosignals')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/CryptoSignals" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">🤖</span>
+                        <span class="claude-project-name">Freqtrade</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'freqtrade')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Freqtrade-MEXC" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">📸</span>
+                        <span class="claude-project-name">Focus Racer</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'focusracer')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/focus-racer" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">🎪</span>
+                        <span class="claude-project-name">OptiTourBooth</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'optitourbooth')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/optitourbooth" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">🃏</span>
+                        <span class="claude-project-name">Belotte</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'belotte')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Belotte" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">📁</span>
+                        <span class="claude-project-name">Upload Tool</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'upload')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Upload" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">👧</span>
+                        <span class="claude-project-name">Alice</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'alice')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Alice" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                    <div class="claude-project">
+                        <span class="claude-project-icon">⚙️</span>
+                        <span class="claude-project-name">Admin Hub</span>
+                        <div class="claude-project-btns">
+                            <button class="btn-copy" onclick="copyProject(this, 'admin')">Copier</button>
+                            <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Admin" target="_blank">Ouvrir</a>
+                        </div>
+                    </div>
+                </div>
+                <p class="claude-hint">Dites a votre Claude : "Fetch [le lien copie] pour avoir les acces du projet"</p>
+            </div>
+        </div>
+
+        <!-- Acces infra complet -->
+        <div class="section">
+            <div class="section-title">Acces Infrastructure Complet</div>
+            <div class="infra-box">
+                <p>Tous les acces serveur, Coolify, Supabase, GitHub — sans projet specifique.</p>
+                <div class="infra-url">
+                    <code>https://infra.swipego.app/api</code>
+                    <button onclick="copyInfra(this)">Copier</button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
+<script>
+function copyProject(btn, name) {
+    navigator.clipboard.writeText('https://infra.swipego.app/api/' + name);
+    btn.textContent = 'Copie !';
+    btn.style.background = '#238636';
+    setTimeout(function() { btn.textContent = 'Copier'; btn.style.background = ''; }, 2000);
+}
+function copyInfra(btn) {
+    navigator.clipboard.writeText('https://infra.swipego.app/api');
+    btn.textContent = 'Copie !';
+    btn.style.background = '#238636';
+    setTimeout(function() { btn.textContent = 'Copier'; btn.style.background = ''; }, 2000);
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script src="/js/auth.js"></script>
