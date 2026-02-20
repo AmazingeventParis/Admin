@@ -147,7 +147,7 @@
         }
         .claude-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 10px;
         }
         .claude-project {
@@ -158,26 +158,51 @@
             border: 1px solid #30363d;
             border-radius: 8px;
             padding: 10px 12px;
-            cursor: pointer;
             transition: all 0.2s;
         }
         .claude-project:hover {
             border-color: #d97706;
             background: #1a1500;
         }
-        .claude-project-icon { font-size: 18px; }
+        .claude-project-icon { font-size: 18px; flex-shrink: 0; }
         .claude-project-name {
             flex: 1;
             font-size: 13px;
             font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-        .claude-project-copy {
+        .claude-project-btns {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .btn-copy, .btn-open {
             font-size: 10px;
-            background: #d97706;
             color: #fff;
             padding: 3px 8px;
             border-radius: 4px;
             font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .btn-copy { background: #d97706; }
+        .btn-copy:hover { background: #b45309; }
+        .btn-open { background: #1f6feb; }
+        .btn-open:hover { background: #1958b7; }
+        .infra-box {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .infra-box p {
+            font-size: 13px;
+            color: #8b949e;
+            margin-bottom: 16px;
+            line-height: 1.5;
         }
     </style>
 </head>
@@ -286,71 +311,105 @@
             </a>
         </div>
     </div>
-    <!-- Acces Claude -->
+    <!-- Acces Claude par projet -->
     <div class="section">
-        <div class="section-title">Acces Claude / IA</div>
+        <div class="section-title">Acces Claude / IA — Par projet</div>
         <div class="claude-box">
-            <p>Copiez le lien d'un projet et donnez-le a votre Claude. Il aura tous les acces + le projet ouvert automatiquement.</p>
+            <p>Copiez le lien d'un projet et donnez-le a votre Claude. Il aura tous les acces + les infos du projet.</p>
             <div class="claude-grid">
-                <div class="claude-project" onclick="copyProject(this, 'kooki')">
+                <div class="claude-project">
                     <span class="claude-project-icon">💰</span>
                     <span class="claude-project-name">Kooki</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'kooki')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Kooki" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'cryptosignals')">
+                <div class="claude-project">
                     <span class="claude-project-icon">📈</span>
                     <span class="claude-project-name">CryptoSignals</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'cryptosignals')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/CryptoSignals" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'freqtrade')">
+                <div class="claude-project">
                     <span class="claude-project-icon">🤖</span>
                     <span class="claude-project-name">Freqtrade</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'freqtrade')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Freqtrade-MEXC" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'focusracer')">
+                <div class="claude-project">
                     <span class="claude-project-icon">📸</span>
                     <span class="claude-project-name">Focus Racer</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'focusracer')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/focus-racer" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'optitourbooth')">
+                <div class="claude-project">
                     <span class="claude-project-icon">🎪</span>
                     <span class="claude-project-name">OptiTourBooth</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'optitourbooth')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/optitourbooth" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'belotte')">
+                <div class="claude-project">
                     <span class="claude-project-icon">🃏</span>
                     <span class="claude-project-name">Belotte</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'belotte')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Belotte" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'upload')">
+                <div class="claude-project">
                     <span class="claude-project-icon">📁</span>
                     <span class="claude-project-name">Upload Tool</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'upload')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Upload" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'alice')">
+                <div class="claude-project">
                     <span class="claude-project-icon">👧</span>
                     <span class="claude-project-name">Alice</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'alice')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Alice" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-                <div class="claude-project" onclick="copyProject(this, 'admin')">
+                <div class="claude-project">
                     <span class="claude-project-icon">⚙️</span>
                     <span class="claude-project-name">Admin Hub</span>
-                    <span class="claude-project-copy">Copier</span>
+                    <div class="claude-project-btns">
+                        <button class="btn-copy" onclick="copyProject(this, 'admin')">Copier</button>
+                        <a class="btn-open" href="https://code.swipego.app/?folder=/home/coder/projects/Admin" target="_blank">Ouvrir</a>
+                    </div>
                 </div>
-            </div>
-            <div class="claude-url" style="margin-top: 16px;">
-                <code>https://infra.swipego.app/api</code>
-                <button onclick="copyAll(this)">Copier infra complete</button>
             </div>
             <p class="claude-hint">Dites a votre Claude : "Fetch [le lien copie] pour avoir les acces du projet"</p>
         </div>
     </div>
+
+    <!-- Acces infra complet -->
+    <div class="section">
+        <div class="section-title">Acces Infrastructure Complet</div>
+        <div class="infra-box">
+            <p>Tous les acces serveur, Coolify, Supabase, GitHub — sans projet specifique.</p>
+            <div class="claude-url">
+                <code>https://infra.swipego.app/api</code>
+                <button onclick="copyAll(this)">Copier</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script>
-function copyProject(el, name) {
+function copyProject(btn, name) {
     const url = 'https://infra.swipego.app/api/' + name;
     navigator.clipboard.writeText(url);
-    const btn = el.querySelector('.claude-project-copy');
     btn.textContent = 'Copie !';
     btn.style.background = '#238636';
     setTimeout(() => {
