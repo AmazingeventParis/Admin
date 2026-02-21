@@ -418,6 +418,8 @@ tbody tr:hover { background: #1a233222; }
     align-items: center;
     gap: 10px;
     transition: all 0.2s;
+    overflow: hidden;
+    min-width: 0;
 }
 .claude-project:hover {
     border-color: #d97706;
@@ -425,7 +427,7 @@ tbody tr:hover { background: #1a233222; }
     transform: translateY(-1px);
 }
 .claude-project-icon { font-size: 20px; flex-shrink: 0; }
-.claude-project-name { flex: 1; font-size: 14px; font-weight: 600; }
+.claude-project-name { flex: 1; font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .claude-project-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .btn-copy, .btn-open {
     font-size: 11px;
