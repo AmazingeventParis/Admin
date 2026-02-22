@@ -20,6 +20,7 @@ class Duel {
   final int? challengerTime;  // Temps en secondes
   final int? challengedTime;  // Temps en secondes
   final String? winnerId;
+  final int betAmount;
   final DateTime createdAt;
   final DateTime expiresAt;
 
@@ -40,6 +41,7 @@ class Duel {
     this.challengerTime,
     this.challengedTime,
     this.winnerId,
+    this.betAmount = 0,
     required this.createdAt,
     required this.expiresAt,
     this.challengerName,
@@ -60,6 +62,7 @@ class Duel {
       challengerTime: json['challenger_time'],
       challengedTime: json['challenged_time'],
       winnerId: json['winner_id'],
+      betAmount: json['bet_amount'] as int? ?? 0,
       createdAt: DateTime.parse(json['created_at']),
       expiresAt: json['expires_at'] != null
           ? DateTime.parse(json['expires_at'])

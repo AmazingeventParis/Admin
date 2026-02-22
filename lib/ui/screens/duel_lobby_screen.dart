@@ -103,6 +103,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen>
           opponentName: widget.opponentName,
           opponentPhotoUrl: widget.opponentPhotoUrl,
           realtimeDuelService: _realtimeService,
+          betAmount: widget.duel.betAmount,
         ),
       ),
     );

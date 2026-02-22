@@ -427,11 +427,14 @@ class SupabaseService {
     required int totalLinesCleared,
     required int totalPlayTimeSeconds,
     required int bestCombo,
+    int candies = 500,
+    String? lastLoginDate,
+    int loginStreak = 0,
   }) async {
     if (_playerId == null) return;
 
     try {
-      await client.from('player_stats').upsert({
+      final data = {
         'player_id': _playerId,
         'games_played': gamesPlayed,
         'high_score': highScore,
@@ -439,8 +442,14 @@ class SupabaseService {
         'total_lines_cleared': totalLinesCleared,
         'total_play_time_seconds': totalPlayTimeSeconds,
         'best_combo': bestCombo,
+        'candies': candies,
+        'login_streak': loginStreak,
         'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'player_id');
+      };
+      if (lastLoginDate != null) {
+        data['last_login_date'] = lastLoginDate;
+      }
+      await client.from('player_stats').upsert(data, onConflict: 'player_id');
     } catch (e) {
       print('Erreur syncStats: $e');
     }

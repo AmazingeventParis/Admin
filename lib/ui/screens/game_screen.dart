@@ -34,6 +34,7 @@ class GameScreen extends StatefulWidget {
   final String? opponentPhotoUrl;  // Photo de l'adversaire
   final RealtimeDuelService? realtimeDuelService;  // Service temps réel (null = async)
   final bool isBotDuel;  // true = adversaire est un bot simulé localement
+  final int betAmount;  // Mise en bonbons pour ce duel
 
   const GameScreen({
     super.key,
@@ -44,6 +45,7 @@ class GameScreen extends StatefulWidget {
     this.opponentPhotoUrl,
     this.realtimeDuelService,
     this.isBotDuel = false,
+    this.betAmount = 0,
   });
 
   @override
@@ -126,10 +128,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   // Blocs qui tombent (overlay)
   List<_FallingBlock> _fallingBlocks = [];
 
-  // Pour le système de combo chaîne
+  // Pour le système de combo chaîne (3 coups de grâce)
   int _comboCount = 0;  // Nombre de lignes consécutives
-  bool _lastMoveWasLine = false;  // Pour savoir si on doit reset
+  int _comboGraceMovesLeft = 0;  // Coups restants avant perte du combo (0-3)
   bool _showComboText = false;  // Afficher le texte combo
+
+  // Bonbons gagnés pendant la session
+  int _sessionCandiesEarned = 0;
+  int _candiesFromLines = 0;
+  int _candiesFromCombos = 0;
+  int _candiesFromEndGame = 0;
+  int _candiesFromRecord = 0;
+  int _duelBetAmount = 0;  // Mise du duel en cours
   AnimationController? _comboAnimController;
   Animation<double>? _comboScaleAnimation;
   Animation<double>? _comboOpacityAnimation;
@@ -145,6 +155,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
   bool _showComboImage = false;
   int _currentComboLevel = 1;
   AnimationController? _comboImageController;
+
+  // Système de difficulté progressive
+  int _pieceBatchCount = 0;  // Nombre de lots de pièces générés
 
   // Jelly Bomb system
   final Math.Random _jellyBombRandom = Math.Random();
@@ -213,6 +226,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _duelOpponentId = widget.opponentId;
       _duelOpponentName = widget.opponentName;
       _duelOpponentPhotoUrl = widget.opponentPhotoUrl;
+      _duelBetAmount = widget.betAmount;
       _pieceGenerator = SeededPieceGenerator(widget.duelSeed!);
     }
 
@@ -442,10 +456,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
         _checkAndClearLines();
         // Vérifier game over après un court délai si pas de lignes à effacer
         if (_clearingCells.isEmpty) {
-          // Pas de lignes à effacer = reset du combo
+          // Pas de lignes à effacer = décrémenter le compteur de grâce
           setState(() {
-            _comboCount = 0;
-            _lastMoveWasLine = false;
+            if (_comboGraceMovesLeft > 0) {
+              _comboGraceMovesLeft--;
+              if (_comboGraceMovesLeft == 0) {
+                _comboCount = 0;
+                _showComboText = false;
+              }
+            }
             _pendingClearRows.clear();
             _pendingClearColumns.clear();
             _lastPlacedPieceColor = null;
@@ -600,10 +619,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     }
 
-    // Incrémenter le combo chaîne (lignes consécutives)
+    // Incrémenter le combo chaîne (3 coups de grâce)
     final linesCleared = linesToClear.length + columnsToClear.length;
     _comboCount += linesCleared;
-    _lastMoveWasLine = true;
+    _comboGraceMovesLeft = 3;  // Reset le compteur de grâce à chaque ligne
 
     // Afficher le texte combo si >= 2
     if (_comboCount >= 2) {
@@ -1001,6 +1020,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     statsService.addLinesCleared(linesCleared);
     statsService.updateBestCombo(_comboCount);
 
+    // Bonbons : 1 par ligne + bonus combo (2 × comboCount)
+    final candiesFromLines = linesCleared * 1;
+    final candiesFromCombo = _comboCount >= 2 ? 2 * _comboCount : 0;
+    _candiesFromLines += candiesFromLines;
+    _candiesFromCombos += candiesFromCombo;
+    _sessionCandiesEarned += candiesFromLines + candiesFromCombo;
+
     setState(() {
       _score += earnedScore;
 
@@ -1170,9 +1196,78 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     _generateNewPiecesRandom();
   }
 
+  /// Retourne la phase de difficulté (1-5) selon le mode
+  int _getDifficultyPhase() {
+    if (_isDuelMode) {
+      // En duel : basé sur le numéro de lot (identique pour les 2 joueurs)
+      if (_pieceBatchCount <= 5) return 1;
+      if (_pieceBatchCount <= 12) return 2;
+      if (_pieceBatchCount <= 20) return 3;
+      if (_pieceBatchCount <= 30) return 4;
+      return 5;
+    } else {
+      // En solo : basé sur le score
+      if (_score < 500) return 1;
+      if (_score < 1500) return 2;
+      if (_score < 3000) return 3;
+      if (_score < 5000) return 4;
+      return 5;
+    }
+  }
+
+  /// Construit le pool de pièces filtré selon la phase de difficulté
+  List<Piece> _buildDifficultyPool(int phase) {
+    final pool = <Piece>[];
+
+    for (final piece in PiecesCatalog.main) {
+      final size = piece.blocks.length;
+
+      if (size <= 1) {
+        // Carré 1×1 : retiré à partir de la phase 2
+        if (phase <= 1) pool.add(piece);
+      } else if (size <= 2) {
+        // Dominos : retirés à partir de la phase 3
+        if (phase <= 2) pool.add(piece);
+      } else if (size <= 3) {
+        // Pièces moyennes (3 blocs) : réduites en phase 4+
+        if (phase <= 3) {
+          pool.add(piece);
+        } else {
+          // Phase 4-5 : garder 1 sur 2 (les rotations 0 et 180)
+          if (pool.where((p) => p.blocks.length == 3).length % 2 == 0) {
+            pool.add(piece);
+          }
+        }
+      } else if (size <= 4) {
+        // Pièces difficiles (4 blocs) : toujours présentes
+        pool.add(piece);
+      } else {
+        // Très difficiles (5+ blocs) : multipliées selon la phase
+        pool.add(piece);
+        if (phase >= 3) pool.add(piece);  // ×2
+        if (phase >= 4) pool.add(piece);  // ×3
+        if (phase >= 5) pool.add(piece);  // ×4
+      }
+    }
+
+    // Carré 3×3 introduit en phase 4+
+    if (phase >= 4) {
+      pool.add(PiecesCatalog.square3);
+      if (phase >= 5) {
+        pool.add(PiecesCatalog.square3);  // Plus fréquent
+        pool.add(PiecesCatalog.square3);
+      }
+    }
+
+    return pool;
+  }
+
   /// Génère les pièces (avec ou sans seed selon le mode)
   void _generateNewPiecesRandom() {
-    final allPieces = List<Piece>.from(PiecesCatalog.main);
+    _pieceBatchCount++;
+
+    final phase = _getDifficultyPhase();
+    final allPieces = List<Piece>.from(_buildDifficultyPool(phase));
 
     // En mode duel, utiliser le random seedé pour garantir les mêmes pièces
     if (_isDuelMode && _pieceGenerator != null) {
@@ -1191,8 +1286,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     }
 
-    // Si le plateau est presque vide, donner des pièces variées
-    if (emptyCells > 50) {
+    // Seuil de plateau vide selon la phase (plus strict = filtrage plus tôt)
+    final emptyThreshold = phase <= 1 ? 50 : (phase <= 2 ? 55 : 58);
+    if (emptyCells > emptyThreshold) {
       _availablePieces = [allPieces[0], allPieces[1], allPieces[2]];
       return;
     }
@@ -1205,16 +1301,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
     }
 
-    // S'il n'y a pas assez de pièces jouables, utiliser les pièces random
+    // Filet de sécurité adapté à la phase
     if (playablePieces.length < 3) {
-      // Ajouter des petites pièces en priorité
-      final smallPieces = allPieces.where((p) => p.blocks.length <= 2).toList();
+      final maxSafetySize = phase <= 2 ? 2 : 1;  // Phase 1-2: dominos, Phase 3+: carrés 1×1
+      final safetyPieces = allPieces.where((p) => p.blocks.length <= maxSafetySize).toList();
+      // Si aucune petite pièce dans le pool (phase 3+ sans 1×1), utiliser le catalogue
+      final fallbackPieces = safetyPieces.isEmpty
+          ? [PiecesCatalog.square1, PiecesCatalog.square1, PiecesCatalog.square1]
+          : safetyPieces;
       if (_isDuelMode && _pieceGenerator != null) {
-        _pieceGenerator!.shuffleList(smallPieces);
+        _pieceGenerator!.shuffleList(fallbackPieces);
       } else {
-        smallPieces.shuffle();
+        fallbackPieces.shuffle();
       }
-      for (final piece in smallPieces) {
+      for (final piece in fallbackPieces) {
         if (!playablePieces.contains(piece)) {
           playablePieces.add(piece);
           if (playablePieces.length >= 3) break;
@@ -1779,7 +1879,55 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                       ),
                     ),
 
-                    // Sugar Rush gauge désactivée
+                    // Compteur de bonbons gagnés (zone ancienne jauge)
+                    if (_sessionCandiesEarned > 0)
+                      Positioned(
+                        left: gaugeX,
+                        top: gaugeY,
+                        width: gaugeWidth,
+                        height: gaugeHeight,
+                        child: Center(
+                          child: TweenAnimationBuilder<double>(
+                            key: ValueKey(_sessionCandiesEarned),
+                            tween: Tween(begin: 1.3, end: 1.0),
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.elasticOut,
+                            builder: (context, scale, child) => Transform.scale(
+                              scale: scale,
+                              child: child,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.45),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: const Color(0xFFFFD700).withOpacity(0.7),
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text('🍬', style: TextStyle(fontSize: 14)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '+$_sessionCandiesEarned',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFFFD700),
+                                      shadows: [
+                                        Shadow(color: Colors.black87, offset: Offset(1, 1), blurRadius: 2),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
 
                     // Plateau de jeu
                     Positioned(
@@ -2862,8 +3010,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       _sessionLinesCleared = 0;
       // Reset combo
       _comboCount = 0;
-      _lastMoveWasLine = false;
+      _comboGraceMovesLeft = 0;
       _showComboText = false;
+      // Reset bonbons session
+      _sessionCandiesEarned = 0;
+      _candiesFromLines = 0;
+      _candiesFromCombos = 0;
+      _candiesFromEndGame = 0;
+      _candiesFromRecord = 0;
+      // Reset difficulté
+      _pieceBatchCount = 0;
       // Reset Jelly Bomb
       _activeJellyBombExplosions = [];
       _explodingJellyBombs = {};
@@ -3010,6 +3166,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
           }
         }
       });
+
+      // Bonbons de duel async (quand les deux ont joué)
+      final asyncBet = updatedDuel.betAmount;
+      if (asyncBet > 0 && _opponentScore != null) {
+        if (_isDuelWinner == true) {
+          final winnings = asyncBet * 2 + 10;
+          _sessionCandiesEarned += winnings;
+          await statsService.addCandies(winnings);
+          await statsService.syncToCloud();
+        } else if (_isDuelWinner == null) {
+          _sessionCandiesEarned += asyncBet;
+          await statsService.addCandies(asyncBet);
+          await statsService.syncToCloud();
+        }
+      }
     }
   }
 
@@ -3024,7 +3195,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     // Parties jouées et score
     await statsService.incrementGamesPlayed();
     await statsService.addScore(_score);
+
+    // Bonbons de fin de partie (5-25 selon le score)
+    final endGameCandies = (_score / 300).clamp(5, 25).round();
+    _candiesFromEndGame = endGameCandies;
+    _sessionCandiesEarned += endGameCandies;
+
+    // Bonus nouveau record : +50 bonbons
+    if (_score > statsService.highScore && _score > 0) {
+      _candiesFromRecord = 50;
+      _sessionCandiesEarned += 50;
+    }
+
     await statsService.updateHighScore(_score);
+
+    // Sauvegarder les bonbons gagnés
+    await statsService.addCandies(_sessionCandiesEarned);
 
     // Sync avec le cloud
     await statsService.syncToCloud();
@@ -3296,6 +3482,23 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
       }
       _waitingForOpponentResult = false;
     });
+
+    // Bonbons de duel
+    if (_duelBetAmount > 0) {
+      if (_isDuelWinner == true) {
+        // Victoire : mise x2 + 10 bonus
+        final winnings = _duelBetAmount * 2 + 10;
+        _sessionCandiesEarned += winnings;
+        statsService.addCandies(winnings);
+        statsService.syncToCloud();
+      } else if (_isDuelWinner == null && _opponentScore != null) {
+        // Égalité : remboursement de la mise
+        _sessionCandiesEarned += _duelBetAmount;
+        statsService.addCandies(_duelBetAmount);
+        statsService.syncToCloud();
+      }
+      // Défaite : rien (mise déjà déduite)
+    }
   }
 
   // === BOT SIMULATION METHODS ===
@@ -3598,276 +3801,254 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
     final isNewHighScore = _score >= _highScore && _score > 0;
 
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withOpacity(0.75),
       child: Center(
-        child: Container(
-          margin: const EdgeInsets.all(30),
-          padding: const EdgeInsets.all(30),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFF6B9D), Color(0xFFE85A8F)],
-            ),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.5),
-                blurRadius: 20,
-                spreadRadius: 5,
+        child: SingleChildScrollView(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFF6B9D), Color(0xFFE85A8F), Color(0xFFD84A7A)],
               ),
-              BoxShadow(
-                color: const Color(0xFFFF6B9D).withOpacity(0.5),
-                blurRadius: 40,
-                spreadRadius: 10,
-              ),
-            ],
-            border: Border.all(
-              color: Colors.white.withOpacity(0.5),
-              width: 3,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Titre GAME OVER en style Candy
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Ombre du texte
-                  const CandyText(
-                    text: 'GAME OVER',
-                    fontSize: 42,
-                    textColor: Color(0xFF8B0000),
-                    strokeColor: Color(0xFF5C0000),
-                    strokeWidth: 6,
-                  ),
-                  // Texte principal avec reflet
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white,
-                        Colors.white.withOpacity(0.8),
-                        const Color(0xFFFFE4E1),
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ).createShader(bounds),
-                    child: const CandyText(
-                      text: 'GAME OVER',
-                      fontSize: 42,
-                      textColor: Colors.white,
-                      strokeColor: Color(0xFFE91E63),
-                      strokeWidth: 5,
-                    ),
-                  ),
-                ],
-              ),
-              if (isNewHighScore) ...[
-                const SizedBox(height: 12),
-                // Badge nouveau record avec effet brillant
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFFFD700), Color(0xFFFFA500), Color(0xFFFFD700)],
-                    ),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFFD700).withOpacity(0.6),
-                        blurRadius: 15,
-                        spreadRadius: 2,
-                      ),
-                      const BoxShadow(
-                        color: Color(0xFFB8860B),
-                        offset: Offset(0, 4),
-                        blurRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.emoji_events, color: Colors.white, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'NOUVEAU RECORD!',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.5,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withOpacity(0.3),
-                              offset: const Offset(1, 2),
-                              blurRadius: 3,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+                BoxShadow(
+                  color: const Color(0xFFFF6B9D).withOpacity(0.4),
+                  blurRadius: 40,
+                  spreadRadius: 10,
                 ),
               ],
-              const SizedBox(height: 30),
-              // Score avec effet doré brillant
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 18),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFFFFD700),
-                      Color(0xFFFFA500),
-                      Color(0xFFFF8C00),
-                      Color(0xFFFFA500),
-                      Color(0xFFFFD700),
-                    ],
-                    stops: [0.0, 0.25, 0.5, 0.75, 1.0],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
-                  boxShadow: [
-                    // Ombre 3D
-                    const BoxShadow(
-                      color: Color(0xFFB8860B),
-                      offset: Offset(0, 6),
-                      blurRadius: 0,
+              border: Border.all(
+                color: Colors.white.withOpacity(0.5),
+                width: 3,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Titre GAME OVER
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const CandyText(
+                      text: 'GAME OVER',
+                      fontSize: 38,
+                      textColor: Color(0xFF8B0000),
+                      strokeColor: Color(0xFF5C0000),
+                      strokeWidth: 6,
                     ),
-                    // Lueur dorée
-                    BoxShadow(
-                      color: const Color(0xFFFFD700).withOpacity(0.5),
-                      blurRadius: 20,
-                      spreadRadius: 5,
+                    ShaderMask(
+                      shaderCallback: (bounds) => LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white.withOpacity(0.8),
+                          const Color(0xFFFFE4E1),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ).createShader(bounds),
+                      child: const CandyText(
+                        text: 'GAME OVER',
+                        fontSize: 38,
+                        textColor: Colors.white,
+                        strokeColor: Color(0xFFE91E63),
+                        strokeWidth: 5,
+                      ),
                     ),
                   ],
                 ),
-                child: Stack(
-                  children: [
-                    Column(
+                // Badge nouveau record
+                if (isNewHighScore) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFFFA500), Color(0xFFFFD700)],
+                      ),
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFFD700).withOpacity(0.6),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        ),
+                        const BoxShadow(
+                          color: Color(0xFFB8860B),
+                          offset: Offset(0, 3),
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Label SCORE
+                        const Icon(Icons.emoji_events, color: Colors.white, size: 20),
+                        const SizedBox(width: 6),
                         Text(
-                          'SCORE',
+                          'NOUVEAU RECORD !',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white.withOpacity(0.9),
-                            letterSpacing: 3,
+                            color: Colors.white,
+                            letterSpacing: 1.5,
                             shadows: [
                               Shadow(
                                 color: Colors.black.withOpacity(0.3),
-                                offset: const Offset(1, 1),
-                                blurRadius: 2,
+                                offset: const Offset(1, 2),
+                                blurRadius: 3,
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 5),
-                        // Score avec effet brillant
-                        ShaderMask(
-                          shaderCallback: (bounds) => const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.white,
-                              Color(0xFFFFFACD),
-                              Colors.white,
-                            ],
-                          ).createShader(bounds),
-                          child: Text(
-                            '$_score',
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                // Score doré
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFFFD700),
+                        Color(0xFFFFA500),
+                        Color(0xFFFF8C00),
+                        Color(0xFFFFA500),
+                        Color(0xFFFFD700),
+                      ],
+                      stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.6), width: 2.5),
+                    boxShadow: [
+                      const BoxShadow(
+                        color: Color(0xFFB8860B),
+                        offset: Offset(0, 5),
+                        blurRadius: 0,
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFFFFD700).withOpacity(0.4),
+                        blurRadius: 15,
+                        spreadRadius: 3,
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          Text(
+                            'SCORE',
                             style: TextStyle(
-                              fontSize: 52,
+                              fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 2,
+                              color: Colors.white.withOpacity(0.9),
+                              letterSpacing: 3,
                               shadows: [
                                 Shadow(
-                                  color: Colors.black.withOpacity(0.4),
-                                  offset: const Offset(2, 3),
-                                  blurRadius: 5,
+                                  color: Colors.black.withOpacity(0.3),
+                                  offset: const Offset(1, 1),
+                                  blurRadius: 2,
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    // Reflet brillant en haut
-                    Positioned(
-                      top: 0,
-                      left: 15,
-                      right: 15,
-                      child: Container(
-                        height: 12,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.white.withOpacity(0.6),
-                              Colors.white.withOpacity(0.0),
-                            ],
+                          const SizedBox(height: 4),
+                          ShaderMask(
+                            shaderCallback: (bounds) => const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.white, Color(0xFFFFFACD), Colors.white],
+                            ).createShader(bounds),
+                            child: Text(
+                              '$_score',
+                              style: TextStyle(
+                                fontSize: 44,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 2,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withOpacity(0.4),
+                                    offset: const Offset(2, 3),
+                                    blurRadius: 5,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Positioned(
+                        top: 0,
+                        left: 12,
+                        right: 12,
+                        child: Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.white.withOpacity(0.6),
+                                Colors.white.withOpacity(0.0),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              // Afficher le résultat du duel si on est en mode duel
-              if (_isDuelMode) ...[
-                const SizedBox(height: 20),
-                _buildDuelResult(),
-              ] else if (!isNewHighScore && _highScore > 0) ...[
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 18),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Record: $_highScore',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFFFFD700),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 30),
-              // Boutons d'action avec effet 3D candy
-              if (_isDuelMode)
-                // En mode duel : bouton QUITTER centré et réduit
-                Center(
-                  child: SizedBox(
-                    width: 160,
-                    child: _buildCandyButton(
-                      onTap: () => Navigator.of(context).pop(),
-                      icon: Icons.home_rounded,
-                      label: 'QUITTER',
-                      gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
-                      shadowColor: const Color(0xFF6C3483),
-                    ),
+                    ],
                   ),
-                )
-              else
-                // Mode normal : QUITTER + REJOUER
-                Row(
-                  children: [
-                    Expanded(
+                ),
+                // Carte détail des bonbons gagnés
+                if (_sessionCandiesEarned > 0) ...[
+                  const SizedBox(height: 14),
+                  _buildCandyBreakdownCard(),
+                ],
+                // Résultat duel ou record
+                if (_isDuelMode) ...[
+                  const SizedBox(height: 16),
+                  _buildDuelResult(),
+                ] else if (!isNewHighScore && _highScore > 0) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 18),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Record : $_highScore',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFFFFD700),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 20),
+                // Boutons
+                if (_isDuelMode)
+                  Center(
+                    child: SizedBox(
+                      width: 160,
                       child: _buildCandyButton(
                         onTap: () => Navigator.of(context).pop(),
                         icon: Icons.home_rounded,
@@ -3876,21 +4057,152 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin, 
                         shadowColor: const Color(0xFF6C3483),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildCandyButton(
-                        onTap: _restartGame,
-                        icon: Icons.replay_rounded,
-                        label: 'REJOUER',
-                        gradientColors: const [Color(0xFF2ECC71), Color(0xFF27AE60)],
-                        shadowColor: const Color(0xFF1E8449),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCandyButton(
+                          onTap: () => Navigator.of(context).pop(),
+                          icon: Icons.home_rounded,
+                          label: 'QUITTER',
+                          gradientColors: const [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                          shadowColor: const Color(0xFF6C3483),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-            ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildCandyButton(
+                          onTap: _restartGame,
+                          icon: Icons.replay_rounded,
+                          label: 'REJOUER',
+                          gradientColors: const [Color(0xFF2ECC71), Color(0xFF27AE60)],
+                          shadowColor: const Color(0xFF1E8449),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCandyBreakdownCard() {
+    final rows = <MapEntry<String, int>>[];
+    if (_candiesFromLines > 0) {
+      rows.add(MapEntry('Lignes effacées', _candiesFromLines));
+    }
+    if (_candiesFromCombos > 0) {
+      rows.add(MapEntry('Bonus combo', _candiesFromCombos));
+    }
+    if (_candiesFromEndGame > 0) {
+      rows.add(MapEntry('Fin de partie', _candiesFromEndGame));
+    }
+    if (_candiesFromRecord > 0) {
+      rows.add(MapEntry('Nouveau record', _candiesFromRecord));
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.25),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFFD700).withOpacity(0.5),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Text('🍬', style: TextStyle(fontSize: 16)),
+              SizedBox(width: 6),
+              Text(
+                'BONBONS GAGNÉS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFFD700),
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Lignes de détail
+          ...rows.map((row) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  row.key,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                ),
+                Text(
+                  '+${row.value}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          )),
+          // Séparateur
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    const Color(0xFFFFD700).withOpacity(0.6),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Total
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'TOTAL',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFFD700),
+                  letterSpacing: 1,
+                ),
+              ),
+              Text(
+                '+$_sessionCandiesEarned',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFFD700),
+                  shadows: [
+                    Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 3),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

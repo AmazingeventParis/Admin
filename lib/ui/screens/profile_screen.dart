@@ -616,6 +616,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildStatsGrid() {
     return Column(
       children: [
+        // Bonbons en vedette
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.6), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFFD700).withOpacity(0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('🍬', style: TextStyle(fontSize: 28)),
+              const SizedBox(width: 10),
+              Text(
+                '${statsService.candies}',
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(color: Color(0xFFB8860B), offset: Offset(1, 2), blurRadius: 3),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'bonbons',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(

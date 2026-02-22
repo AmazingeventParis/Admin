@@ -12,6 +12,7 @@ class DuelService {
   Future<Duel?> createDuel({
     required String challengerId,
     required String challengedId,
+    int betAmount = 50,
   }) async {
     try {
       final seed = Random().nextInt(2147483647);
@@ -23,6 +24,7 @@ class DuelService {
             'challenged_id': challengedId,
             'seed': seed,
             'status': 'pending',
+            'bet_amount': betAmount,
           })
           .select()
           .single();

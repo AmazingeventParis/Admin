@@ -727,6 +727,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
                 opponentName: player.username,
                 opponentPhotoUrl: player.photoUrl,
                 isBotDuel: true,
+                betAmount: duel.betAmount,
               ),
             ),
           );
@@ -796,6 +797,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
               opponentId: duel.challengerId,
               opponentName: duel.challengerName,
               opponentPhotoUrl: duel.challengerPhotoUrl,
+              betAmount: duel.betAmount,
             ),
           ),
         );
@@ -1629,20 +1631,52 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        opponentName ?? 'Joueur',
-                        style: TextStyle(
-                          color: const Color(0xFF5D3A1A),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          shadows: [
-                            Shadow(
-                              color: Colors.white.withOpacity(0.5),
-                              blurRadius: 1,
-                              offset: const Offset(0, 1),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              opponentName ?? 'Joueur',
+                              style: TextStyle(
+                                color: const Color(0xFF5D3A1A),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.white.withOpacity(0.5),
+                                    blurRadius: 1,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (duel.betAmount > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFD700).withOpacity(0.8),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text('🍬', style: TextStyle(fontSize: 10)),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '${duel.betAmount}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF5D3A1A),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
-                        ),
+                        ],
                       ),
                       const SizedBox(height: 3),
                       _buildDuelStatus(type, myScore, opponentScore),
@@ -1897,6 +1931,7 @@ class _DuelScreenState extends State<DuelScreen> with TickerProviderStateMixin, 
           opponentId: opponentId,
           opponentName: opponentName,
           opponentPhotoUrl: opponentPhoto,
+          betAmount: duel.betAmount,
         ),
       ),
     );

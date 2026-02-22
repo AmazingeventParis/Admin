@@ -1,590 +1,105 @@
-# Historique de Session Claude - Jeu Puzzle (Candy Puzzle)
+# Candy Puzzle - Référence Projet
 
-## Date: 6 Février 2026 - Résolution Crash iOS + Google Sign-In iOS
+## Stack Technique
 
----
-
-## Session du 6 Février 2026 - Débogage et Google Sign-In iOS
-
-### 1. Problème Principal : App Crash au Lancement (Builds 1-7)
-
-#### Symptôme
-L'application se fermait immédiatement après l'ouverture sur iPhone, sans aucun message d'erreur visible dans App Store Connect.
-
-#### Cause Racine Identifiée
-L'application était compilée en mode **DEBUG** au lieu de **RELEASE**.
-
-#### Message d'erreur sur iPhone (Build 7)
-```
-In iOS 14+, debug mode Flutter apps can only be launched from Flutter tooling...
-```
-
-#### Solution
-Dans **Codemagic** → Build settings → **Mode: Release** (pas Debug)
-
-#### Approche de débogage utilisée
-1. Retrait de Device Preview ❌ (pas la cause)
-2. Ajout try-catch autour de Supabase/Audio ❌ (pas la cause)
-3. Splash screen minimaliste ❌ (pas la cause)
-4. Création du Podfile iOS ❌ (pas la cause)
-5. **Build 8 en mode RELEASE** ✅ **SOLUTION**
+- **Framework** : Flutter/Dart
+- **Backend** : Supabase (Auth, DB, Realtime, Edge Functions)
+- **Auth** : Google Sign-In (Web/Android + iOS Client IDs séparés) + mode anonyme
+- **Notifications** : OneSignal (push iOS via APNs + Android via FCM)
+- **CI/CD iOS** : Codemagic (Mac M2 cloud, mode RELEASE obligatoire)
+- **Distribution iOS** : TestFlight (lien public : `testflight.apple.com/join/Kpujctb1`)
+- **Bundle ID** : `com.amazingevent.candypuzzle`
 
 ---
 
-### 2. Problème Secondaire : Crash Google Sign-In (Builds 8-9)
+## Configuration & Identifiants
 
-#### Symptôme
-L'app fonctionnait en mode "Jouer sans compte" mais crashait lors du clic sur "Connexion Google".
-
-#### Cause
-iOS nécessite un **Client ID spécifique** différent d'Android/Web.
-
-#### Solution en 3 étapes
-
-**Étape 1 : Créer un iOS Client ID dans Google Cloud Console**
-1. Google Cloud Console → APIs & Services → Credentials
-2. Create Credentials → OAuth client ID
-3. Application type: **iOS**
-4. Bundle ID: `com.amazingevent.candypuzzle`
-5. Copier le Client ID généré
-
-**Étape 2 : Configurer `ios/Runner/Info.plist`**
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-    <key>CFBundleTypeRole</key>
-    <string>Editor</string>
-    <key>CFBundleURLSchemes</key>
-    <array>
-      <string>com.googleusercontent.apps.329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40</string>
-    </array>
-  </dict>
-</array>
-<key>GIDClientID</key>
-<string>329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com</string>
-```
-
-**Étape 3 : Mettre à jour `supabase_service.dart`**
-```dart
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
-
-// iOS Client ID from Google Cloud Console
-static const String _iosClientId = '329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com';
-
-// Dans signInWithGoogle():
-final GoogleSignIn googleSignIn = GoogleSignIn(
-  clientId: !kIsWeb && Platform.isIOS ? _iosClientId : null,
-  serverClientId: _webClientId,
-);
-```
-
----
-
-### 3. Client IDs Google OAuth - Récapitulatif
-
-| Plateforme | Client ID | Utilisation |
-|------------|-----------|-------------|
-| Web/Android | `329868845376-hbh8plnscagl2smu97pphatm0kanmdg2.apps.googleusercontent.com` | `serverClientId` |
-| iOS | `329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com` | `clientId` sur iOS |
-
-**Important** : Le URL Scheme iOS = Client ID inversé : `com.googleusercontent.apps.XXX`
-
----
-
-### 4. Historique des Builds TestFlight
-
-| Build | Version | Mode | Résultat | Notes |
-|-------|---------|------|----------|-------|
-| 1 | 1.0.0+1 | Debug | ❌ Crash | Premier test |
-| 2 | 1.0.0+2 | Debug | ❌ Crash | Sans Device Preview |
-| 3 | 1.0.0+3 | Debug | ❌ Crash | Avec try-catch |
-| 4 | 1.0.0+4 | Debug | ❌ Crash | Splash minimaliste |
-| 5 | 1.0.0+5 | Debug | ❌ Crash | Test audio |
-| 6 | 1.0.0+6 | Debug | ❌ Crash | Avec Podfile |
-| 7 | 1.0.0+7 | Debug | ❌ Crash | Message debug visible |
-| 8 | 1.0.0+8 | **Release** | ⚠️ Partiel | App OK, Google crash |
-| 9 | 1.0.0+9 | Release | ⚠️ Partiel | iOS Client ID ajouté |
-| 10 | 1.0.0+10 | Release | ✅ **OK** | **Tout fonctionne !** |
-
----
-
-### 5. Fichiers Modifiés (6 Février)
-
-| Fichier | Modification |
-|---------|-------------|
-| `pubspec.yaml` | Version 1.0.0+10 |
-| `lib/services/supabase_service.dart` | Ajout iOS Client ID + détection plateforme |
-| `ios/Runner/Info.plist` | URL Schemes + GIDClientID pour Google Sign-In |
-
----
-
-### 6. Leçons Apprises - iOS TestFlight
-
-1. **Toujours compiler en RELEASE** pour TestFlight (mode Debug = crash immédiat sur iOS 14+)
-2. **iOS et Android ont des Client ID différents** pour Google Sign-In
-3. **Le URL Scheme iOS** doit être le Client ID inversé (`com.googleusercontent.apps.XXX`)
-4. **Incrémenter la version** à chaque upload (le bundle version doit être unique)
-5. **Pas de rapport de crash** dans App Store Connect pour les apps Debug (elles ne démarrent pas)
-
----
-
-### 7. Configuration Codemagic Finale
-
-```
-Platform: iOS
-Mode: Release ← CRITIQUE
-Build type: App Store / TestFlight
-Code Signing: Automatic
-Publishing: App Store Connect
-```
-
----
-
-## Date: 5 Février 2026 - Déploiement TestFlight iOS
-
----
-
-## Session du 5 Février 2026 - Partie 3 : Déploiement iOS via TestFlight
-
-### 1. Configuration Codemagic (CI/CD pour iOS)
-
-#### Pourquoi Codemagic ?
-- L'utilisateur est sur **Windows** (pas de Mac)
-- Codemagic permet de compiler iOS dans le cloud sur des Mac M2
-- Gratuit : 500 minutes/mois
-
-#### Étapes réalisées
-1. Création du repo GitHub : `https://github.com/aschercohen-a11y/candy-puzzle`
-2. Connexion Codemagic au repo GitHub
-3. Création de l'API Key App Store Connect (KZBZXWQ5YW)
-4. Configuration du code signing automatique
-5. Création du Bundle ID : `com.amazingevent.candypuzzle`
-6. Création de l'app sur App Store Connect
-
-### 2. Problèmes rencontrés et solutions
-
-#### Erreur 1 : Icône iOS avec transparence
-```
-Invalid large app icon. The large app icon can't be transparent or contain an alpha channel.
-```
-**Solution :**
-- Ajout de `IconeIOS.png` dans assets
-- Configuration `flutter_launcher_icons` avec :
-```yaml
-flutter_launcher_icons:
-  ios: true
-  image_path: "assets/ui/IconeIOS.png"
-  remove_alpha_ios: true
-  background_color_ios: "#87CEEB"
-```
-- Régénération des icônes : `dart run flutter_launcher_icons`
-
-#### Erreur 2 : Numéro de build dupliqué
-```
-The bundle version must be higher than the previously uploaded version.
-```
-**Solution :**
-- Incrémenter la version dans `pubspec.yaml` :
-- `version: 1.0.0+1` → `1.0.0+2` → `1.0.0+3`
-
-#### Erreur 3 : App crash au lancement sur iPhone
-**Cause probable :** Device Preview incompatible avec iOS release
-
-**Solution :**
-1. Suppression complète de `device_preview` du projet
-2. Nettoyage de `main.dart` (suppression des imports et code Device Preview)
-3. Retrait de la dépendance dans `pubspec.yaml`
-4. Ajout de try-catch autour de :
-   - `SupabaseService.initialize()`
-   - `audioService.playIntroMusic()`
-   - Méthodes du service audio
-
-### 3. Configuration TestFlight
-
-#### Question Chiffrement (Export Compliance)
-- Réponse : **"Aucun des algorithmes mentionnés ci-dessus"**
-- L'app utilise HTTPS standard fourni par iOS (pas de crypto personnalisée)
-
-#### Groupe de testeurs
-- Groupe interne créé : "Candy"
-- Testeur : Dominique Cohen (iPhone 12 Pro Max, iOS 18.1)
-
-### 4. Fichiers modifiés
-
-| Fichier | Modification |
-|---------|-------------|
-| `pubspec.yaml` | Retrait device_preview, incrémentation version |
-| `lib/main.dart` | Suppression Device Preview, ajout try-catch Supabase |
-| `lib/services/audio_service.dart` | Ajout try-catch playIntroMusic |
-| `lib/ui/screens/splash_screen.dart` | Ajout try-catch audioService |
-| `ios/Runner/Assets.xcassets/AppIcon.appiconset/*` | Nouvelles icônes sans transparence |
-
-### 5. Commandes Codemagic
-
-```bash
-# Le build se fait automatiquement sur Codemagic
-# Workflow : Default Workflow
-# Machine : Mac mini M2
-# Durée moyenne : ~9-10 minutes
-```
-
-### 6. Flux TestFlight
-
-```
-Code → GitHub Push → Codemagic Build → App Store Connect → TestFlight
-                                                              ↓
-                                              Testeurs reçoivent notification
-                                                              ↓
-                                              Mise à jour via app TestFlight
-```
-
-### 7. État actuel
-
-- ✅ Build iOS compilé avec succès
-- ✅ App uploadée sur App Store Connect
-- ✅ Groupe de testeurs créé
-- ⏳ Test en cours (build 3 avec corrections crash)
-- ❓ Lien public TestFlight (à activer dans Réglages du groupe)
-
-### 8. Pour activer le lien public TestFlight
-
-1. App Store Connect → TestFlight → Groupe "Candy"
-2. Onglet **"Réglages"**
-3. Activer **"Lien public"**
-4. Copier le lien `testflight.apple.com/join/XXXXX`
-5. Partager à n'importe qui !
-
----
-
-## Date: 5 Février 2026 (Suite)
-
----
-
-## Session du 5 Février 2026 - Partie 2
-
-### 1. Sugar Rush Overlay - Refonte complète
-
-#### Problème
-- L'overlay Sugar Rush se répétait plusieurs fois
-- Le titre était petit et peu attrayant
-
-#### Solution
-- **Apparition unique** par activation (ne se répète plus)
-- **Titre en 2 lignes** :
-  - "SUGAR" (52px, dégradé doré, italic, w900)
-  - "RUSH!" (58px, dégradé rose/fuchsia, italic, w900)
-- **Badge "SCORE x5"** avec dégradé doré en dessous
-- **Animation** : zoom rapide → reste visible → fondu sortie (2000ms)
-- **Confettis** multicolores en arrière-plan
-- **Flash blanc** initial
-
-### 2. Layout Jauge Sugar Rush - Timer et x5
-
-#### Problème
-- Le timer (secondes) et le badge x5 écrasaient la jauge dans un Row
-- La jauge devenait minuscule pendant le Sugar Rush
-
-#### Solution - Passage à Stack
-```dart
-// AVANT : Row qui compressait la jauge
-Row(children: [Timer, Expanded(Gauge), x5])
-
-// APRÈS : Stack avec superposition
-Stack(
-  children: [
-    Positioned.fill(child: Gauge),           // Jauge pleine largeur
-    Positioned(left: -offset, child: Timer), // Timer superposé à gauche
-    Positioned(right: -offset, child: x5),   // x5 superposé à droite
-  ],
-)
-```
-
-#### Ajustements visuels
-- **Timer** réduit : 48px → 38px, texte 18px → 14px
-- **Badge x5** réduit : padding 12/6 → 8/4, texte 22px → 16px
-- **Positionnement** : écartés de `gaugeHeight * 1.1` et centrés verticalement avec `top: (gaugeHeight - 38) / 2`
-
-### 3. Étincelles sur l'étoile de la jauge
-
-#### Implémentation
-- Nouveau `AnimationController` (`_sparkleController`, cycle 2s)
-- Changement de `SingleTickerProviderStateMixin` → `TickerProviderStateMixin`
-- `_GaugeSparkPainter` dessine les étincelles autour de l'étoile
-
-#### Progression des étincelles
-| Jauge | Nb étincelles | Nb traînées | Couleurs |
-|-------|--------------|-------------|----------|
-| 0-35% | 3 | 2 | Jaune doré |
-| 35-65% | ~9 | ~7 | Jaune + Rouge |
-| 65-90% | ~13 | ~9 | Jaune + Rouge + Bleu |
-| 90-100% | **22** | **14** | **Bouquet final** : 9 couleurs (doré, rouge, bleu, rose, cyan, vert, blanc, fuchsia, orange) |
-
-#### Bouquet final (≥90%)
-- Rayon d'étincelles x1.8
-- Taille des étincelles x1.8
-- 22 étincelles + 14 traînées multicolores
-- Effet spectaculaire avant activation du Sugar Rush
-
-### 4. Étincelles sur les Jelly Bombs
-
-#### Implémentation
-- Ajout de `_JellySparkPainter` dans `jelly_bomb_widget.dart`
-- 3 étincelles par Jelly Bomb (étoile 8 branches)
-- Glow blanc + centre blanc vif
-- Animation avec `_shineAnimation.value` existant
-- Apparition/disparition en décalé
-
-#### Distinction briques normales vs Jelly
-- Paramètre `showSparkle` ajouté à `BlockWidget` (défaut: `false`)
-- `CellWidget` ne passe **PAS** `showSparkle: true` (briques normales)
-- Étincelles uniquement sur `JellyBombWidget`
-- `BlockWidget` converti en `StatefulWidget` (pour supporter l'animation si nécessaire)
-
-### 5. Particules d'énergie (ligne → jauge) - Améliorées
-
-#### Changements
-| Paramètre | Avant | Après |
-|-----------|-------|-------|
-| Max particules/clear | 5 | **12** |
-| Délai entre particules | 50ms | **25ms** (quasi continu) |
-| Taille particule | 10px | **16px** |
-| Longueur traînée | 8 positions | **14 positions** |
-| Arc de trajectoire | -50px | **-60px** |
-
-### 6. Fond sombre derrière les pièces
-
-#### Problème
-- Le fond arc-en-ciel rendait les pièces difficiles à voir dans le cadre du bas
-
-#### Solution
-- Ajout d'un `Container` noir semi-transparent (35% opacité)
-- Positionné entre le fond et le cadre décoratif
-- Coins arrondis (borderRadius: 16)
-- Marges intérieures : 5% horizontal, 8% vertical
-
-```dart
-// Fond sombre derrière les pièces
-Positioned(
-  left: piecesFrameWidth * 0.05,
-  right: piecesFrameWidth * 0.05,
-  top: piecesFrameHeight * 0.08,
-  bottom: piecesFrameHeight * 0.08,
-  child: Container(
-    decoration: BoxDecoration(
-      color: Colors.black.withOpacity(0.35),
-      borderRadius: BorderRadius.circular(16),
-    ),
-  ),
-),
-```
-
----
-
-## Fichiers Modifiés (5 Février - Partie 2)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/ui/screens/game_screen.dart` | Layout jauge Stack, fond sombre pièces, particules x12 size 16 |
-| `lib/ui/widgets/sugar_rush_widget.dart` | Overlay unique, étincelles progressives jauge, particules traînée 14 |
-| `lib/ui/widgets/block_widget.dart` | Converti en StatefulWidget, paramètre `showSparkle` |
-| `lib/ui/widgets/cell_widget.dart` | Pas de sparkle sur briques normales |
-| `lib/ui/widgets/jelly_bomb_widget.dart` | Ajout `_JellySparkPainter` pour étincelles Jelly Bombs |
-
----
-
-## Session du 5 Février 2026 - Partie 1
-
-### 1. Système Sugar Rush
-
-#### Fonctionnalités
-- **Jauge Sugar Rush** : Barre de progression qui se remplit quand on complète des lignes
-- **Animation Lerp** : Remplissage fluide avec interpolation linéaire
-- **Mode Fever** : Quand la jauge atteint 100% :
-  - Multiplicateur x5 pendant 10 secondes
-  - Effet confettis à l'écran
-  - Timer visuel circulaire
-- **Particules d'énergie** : Volent des lignes complétées vers la jauge
-
-#### Fichiers créés/modifiés
-- `lib/ui/widgets/sugar_rush_widget.dart` - Widgets: SugarRushGauge, SugarRushOverlay, SugarRushMultiplier, SugarRushTimer, SugarRushEnergyParticle
-
-### 2. Effets de fumée pour Jelly Bomb
-
-- Ajout de particules de fumée lors des explosions
-- Classes ajoutées dans `lib/ui/widgets/particle_effect.dart` :
-  - `SmokeEffect` : Fumée grise qui s'évapore
-  - `ColoredSmokeEffect` : Fumée colorée pour les explosions
-
-### 3. Éditeur de Layout HTML
-
-#### Outil créé : `layout_editor.html`
-- Page web locale pour ajuster le positionnement des éléments UI
-- Fonctionnalités :
-  - **Glisser-déposer** : Déplacer les éléments avec la souris
-  - **Redimensionnement** : Coin cyan pour changer la taille
-  - **Clavier** : Flèches pour déplacer (1px), Shift+Flèches (10px)
-  - **Export** : Génère les mesures et pourcentages Flutter
-
-#### Éléments configurables
-- Score Gauche / Score Droit
-- Jauge Sugar Rush
-- Plateau de Jeu
-- Cadre Pièces
-- Zones Pièce 1, 2, 3
-
-### 4. Refonte du Layout Game Screen
-
-#### Changement majeur : Positionnement absolu
-- Passage de `Column` avec `Expanded` à `Stack` avec `Positioned`
-- Permet un contrôle précis basé sur les pourcentages de l'écran
-
-#### Configuration actuelle (référence 380x680)
-```dart
-// === CONFIGURATION LAYOUT ===
-final scoreWidth = screenWidth * 0.395;
-final scoreHeight = screenHeight * 0.088;
-final gaugeWidth = screenWidth * 0.513;
-final gaugeHeight = screenHeight * 0.066;
-final boardSize = screenWidth * 0.921;
-final piecesFrameWidth = screenWidth * 0.955;
-final piecesFrameHeight = screenHeight * 0.251;
-
-final scoreLeftX = screenWidth * 0.032;
-final scoreRightX = screenWidth * 0.574;
-final gaugeX = screenWidth * 0.234;
-final boardX = screenWidth * 0.039;
-final piecesX = screenWidth * 0.021;
-
-final scoreY = screenHeight * 0.012;
-final gaugeY = screenHeight * 0.116;
-final boardY = screenHeight * 0.191;
-final piecesY = screenHeight * 0.704;
-```
-
-### 5. Simplification de l'écran de jeu
-
-- **Supprimé** : Avatar profil, nom du joueur, bouton paramètres
-- **Conservé** : Scores (actuel et best) uniquement en haut
-- **Ajouté** : Cadre décoratif `cadrebloqueenbas.png` autour des pièces
-
-### 6. Fix du clipping des pièces longues
-
-#### Problème
-- Les pièces horizontales de 4-5 blocs étaient coupées à droite
-
-#### Solution
-- Utilisation de `UnconstrainedBox` avec `clipBehavior: Clip.none`
-
-### 7. Nouvelles pièces et équilibrage
-
-#### Pièces ajoutées dans `pieces_catalog.dart`
-- `rect2x3` : Rectangle 2x3 (vertical, couleur orange)
-- `rect3x2` : Rectangle 3x2 (horizontal, couleur orange)
-
-#### Distribution équilibrée
-- Chaque type de pièce a ~4 entrées dans la liste `main`
-- Pièces simples (carrés, dominos, lignes) : doublées
-- Pièces à rotations (L/J/T) : 1 par rotation = 4 entrées
-- S/Z : 2 par rotation = 4 entrées
-- Rectangles : 2 par orientation = 4 entrées
-
-### 8. Taille dynamique des blocs de pièces
-```dart
-final blockByWidth = (slotWidth - 16) / (pieceWidth > 3 ? pieceWidth : 3);
-final blockByHeight = (slotHeight - 16) / (pieceHeight > 3 ? pieceHeight : 3);
-final clampedBlockSize = blockByWidth < blockByHeight
-    ? blockByWidth.clamp(14.0, 22.0)
-    : blockByHeight.clamp(14.0, 22.0);
-```
-
----
-
-## Date: 4 Février 2026
-
----
-
-## Session du 4 Février 2026
-
-### Améliorations Page Leaderboard
-
-#### 1. Cadre candy autour des photos
-- Nouveau cadre `Cerclevidepourphoto.png` autour de toutes les photos
-- Structure Stack : photo en dessous (75% de la taille), cadre par-dessus
-
-#### 2. Liste des joueurs (4ème position et après)
-- Liste scrollable avec les joueurs à partir de la 4ème position
-- Style du texte avec contour (stroke effect)
-
-#### 3. Menu de navigation en bas
-- 3 boutons : Accueil, Leader, Messages
-- Bouton page courante : statique (opacité 60%)
-- Autres boutons : animés avec effet vague
-
-#### 4. Mode plein écran
-- `SystemUiMode.immersiveSticky` dans `main.dart`
-
-#### 5. Prénoms et scores du podium
-
-### Améliorations Page Admin
-
-#### 1. Contrôle des scores des faux profils
-- Score minimum et maximum configurables
-
-#### 2. Modification des scores pour tous les profils
-
-#### 3. Tri des utilisateurs par score
-
-### Correction du Classement dans l'APK
-- Le tri `order('high_score', ascending: false)` côté serveur
-- Requête part de `player_stats` au lieu de `players`
-
----
-
-## Date: 3 Février 2026
-
----
-
-## Session du 3 Février 2026
-
-### 1. Authentification Google Sign-In
-### 2. Page Profil / Statistiques
-### 3. Gestion du Profil
-### 4. Synchronisation des Stats
-### 5. Photo de Profil sur l'Écran de Jeu
-### 6. Page Menu (Accueil)
-### 7. Page Administration Web
-
----
-
-## Flux de Navigation
-
-```
-Splash Screen
-     ↓
-Auth Screen (Connexion Google ou Sans compte)
-     ↓
-Menu Screen
-  ├── Bouton JOUER → Game Screen
-  ├── Bouton Profil → Profile Screen
-  ├── Bouton Classement → Leaderboard Screen
-  ├── Bouton Paramètres → (À venir)
-  └── Bouton Déconnexion → Auth Screen
-```
-
----
-
-## Configuration Supabase
-
-### URL et Clés
+### Supabase
 ```dart
 static const String _supabaseUrl = 'https://icujwpwicsmyuyidubqf.supabase.co';
 static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
-static const String _webClientId = '329868845376-hbh8plnscagl2smu97pphatm0kanmdg2.apps.googleusercontent.com';
 ```
 
-### Tables SQL
+### Google OAuth Client IDs
+| Plateforme | Client ID | Usage |
+|------------|-----------|-------|
+| Web/Android | `329868845376-hbh8plnscagl2smu97pphatm0kanmdg2.apps.googleusercontent.com` | `serverClientId` |
+| iOS | `329868845376-mlj0g6jsgpqkglocvbc87h6vprosnb40.apps.googleusercontent.com` | `clientId` sur iOS uniquement |
+
+**iOS** : Le URL Scheme = Client ID inversé (`com.googleusercontent.apps.XXX`) dans Info.plist.
+
+### OneSignal
+```
+App ID: 01e66a57-6563-4572-b396-ad338b648ddf
+REST API Key: os_v2_app_ahtguv3fmncxfm4wvuzywzen34cc2kxpxnsezp55pu5efdzorqujkxrvasncfgnjgjs62pt2pibtjihkuypdt7new5v6jaa3zuzosja
+```
+
+### APNs iOS
+- Key ID : `999274RLFU`
+- Team ID : `Z8MD4FCA29`
+
+### Codemagic
+```
+Platform: iOS
+Mode: Release (CRITIQUE - Debug crash sur iOS 14+)
+Build type: App Store / TestFlight
+Code Signing: Automatic
+API Key App Store Connect: KZBZXWQ5YW
+Dernier build TestFlight : 1.0.0+25 (Build 25)
+```
+
+---
+
+## Structure du Projet
+
+### Services
+- `lib/services/supabase_service.dart` — Auth Google + gestion joueurs + détection plateforme iOS
+- `lib/services/stats_service.dart` — Stats avec sync cloud
+- `lib/services/audio_service.dart` — Musique (mutable) + effets sonores (toujours actifs)
+- `lib/services/screen_shake_service.dart` — Tremblement écran
+- `lib/services/notification_service.dart` — OneSignal (init, login, envoi push)
+- `lib/services/friend_service.dart` — Amis + simulation bots en ligne
+- `lib/services/duel_service.dart` — Duels + détection bots (`device_id.startsWith('fake_')`)
+- `lib/services/message_service.dart` — Messages + notifications push
+
+### Écrans
+- `lib/ui/screens/splash_screen.dart` — Démarrage
+- `lib/ui/screens/auth_screen.dart` — Connexion (Google / Apple / Sans compte avec dialogue prénom)
+- `lib/ui/screens/menu_screen.dart` — Menu principal + simulation bots en ligne + vérif duels bots en attente
+- `lib/ui/screens/game_screen.dart` — Jeu + Sugar Rush + duels temps réel + bot intelligent
+- `lib/ui/screens/profile_screen.dart` — Profil (prénom non modifiable pour anonymes)
+- `lib/ui/screens/leaderboard_screen.dart` — Classement
+- `lib/ui/screens/duel_screen.dart` — Onglets Duels/Amis/En Ligne/Tous + notifications temps réel
+
+### Widgets
+- `sugar_rush_widget.dart` — Jauge, overlay (unique), timer, multiplicateur x5, particules énergie
+- `block_widget.dart` — Brique 1x1 (StatefulWidget, sparkle optionnel)
+- `cell_widget.dart` — Cellule grille
+- `piece_widget.dart` — Pièce puzzle complète
+- `jelly_bomb_widget.dart` — Bombe Jelly avec étincelles + explosion 3x3
+- `particle_effect.dart` — Particules et fumée
+- `candy_ui.dart` — Composants UI réutilisables
+
+### Modèles
+- `game_state.dart` — État du jeu, grille, cellules, BlockType
+- `piece.dart` — Modèle pièce (blocs + couleur)
+- `pieces_catalog.dart` — Catalogue pièces et rotations (~4 entrées par type)
+
+### Admin Web
+- `admin/index.html` + `admin/style.css` + `admin/admin.js`
+- Fonctions : gestion scores, suppression profils (cascade), envoi messages + push, demandes d'amis
+
+### Edge Functions
+- `supabase/functions/send-onesignal-notification/index.ts` — Envoi push via API OneSignal
+
+### Outils
+- `layout_editor.html` — Éditeur layout (drag & drop)
+- `layout_editor_amis.html` — Éditeur carte ami
+
+---
+
+## Schéma Base de Données
+
 ```sql
 CREATE TABLE players (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -603,228 +118,12 @@ CREATE TABLE player_stats (
   total_lines_cleared INTEGER DEFAULT 0,
   total_play_time_seconds INTEGER DEFAULT 0,
   best_combo INTEGER DEFAULT 0,
+  candies INTEGER DEFAULT 500,
+  last_login_date DATE,
+  login_streak INTEGER DEFAULT 0,
   updated_at TIMESTAMP DEFAULT NOW()
 );
-```
 
----
-
-## Commandes Utiles
-
-```bash
-# Générer l'APK
-flutter build apk --release
-
-# Clean build
-flutter clean && flutter build apk --release
-
-# Emplacement de l'APK
-build\app\outputs\flutter-apk\app-release.apk
-```
-
----
-
-## Dépendances
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  shared_preferences: ^2.2.2
-  audioplayers: ^5.2.1
-  supabase_flutter: ^2.3.0
-  google_sign_in: ^6.1.6
-```
-
----
-
-## Tous les fichiers du projet
-
-### Services
-- `lib/services/supabase_service.dart` - Service Supabase + Google Sign-In
-- `lib/services/stats_service.dart` - Gestion des statistiques avec sync cloud
-- `lib/services/audio_service.dart` - Service audio (musique, effets sonores)
-- `lib/services/screen_shake_service.dart` - Service de tremblement d'écran
-
-### Écrans
-- `lib/ui/screens/auth_screen.dart` - Écran de connexion
-- `lib/ui/screens/menu_screen.dart` - Page menu principal
-- `lib/ui/screens/game_screen.dart` - Écran de jeu principal
-- `lib/ui/screens/profile_screen.dart` - Écran profil/statistiques
-- `lib/ui/screens/splash_screen.dart` - Écran de démarrage
-- `lib/ui/screens/leaderboard_screen.dart` - Classement des joueurs
-
-### Widgets
-- `lib/ui/widgets/candy_ui.dart` - CandyAvatarButton, CandyText, CandyCircleButton
-- `lib/ui/widgets/block_widget.dart` - Brique 1x1 glossy (StatefulWidget avec sparkle optionnel)
-- `lib/ui/widgets/cell_widget.dart` - Cellule de grille (vide ou occupée)
-- `lib/ui/widgets/piece_widget.dart` - Pièce de puzzle complète
-- `lib/ui/widgets/sugar_rush_widget.dart` - Jauge, overlay, timer, multiplicateur, particules
-- `lib/ui/widgets/jelly_bomb_widget.dart` - Jelly Bomb avec étincelles + explosion
-- `lib/ui/widgets/particle_effect.dart` - Effets de particules et fumée
-
-### Modèles
-- `lib/models/game_state.dart` - État du jeu, grille, cellules, BlockType
-- `lib/models/piece.dart` - Modèle de pièce (blocs + couleur)
-- `lib/models/pieces_catalog.dart` - Catalogue de toutes les pièces et rotations
-
-### Admin Web
-- `admin/index.html` - Page HTML
-- `admin/style.css` - Styles CSS
-- `admin/admin.js` - Logique JavaScript + Supabase
-
-### Outils
-- `layout_editor.html` - Éditeur de layout web (drag & drop)
-
----
-
-## Assets
-
-```yaml
-assets:
-  - assets/ui/cerclevidephoto.png
-  - assets/ui/fondpageaccueil.png
-  - assets/ui/cercleparametres.png
-  - assets/ui/cerclesscore.png
-  - assets/ui/cerclemeilleurscrore.png
-  - assets/ui/Logo titre.png
-  - assets/ui/Menu.png
-  - assets/ui/Boutonaccueil.png
-  - assets/ui/boutonleader.png
-  - assets/ui/boutonmessages.png
-  - assets/ui/Cerclevidepourphoto.png
-  - assets/ui/sugar_gauge_frame.png
-  - assets/ui/sugar_gauge.png
-  - assets/ui/sugar_gauge_icon.png
-  - assets/ui/cadrebloqueenbas.png
-  - assets/ui/jelly_bomb_idle.png
-  - assets/ui/jelly_bomb_glow.png
-  - assets/ui/jelly_bomb_burst.png
-  - assets/bg/bg.png
-  - assets/blocks/block_base2.png
-```
-
----
-
-## Prochaines Étapes Possibles
-
-1. ~~**Classement (Leaderboard)**~~ - FAIT
-2. ~~**Sugar Rush**~~ - FAIT - Jauge avec multiplicateur x5, étincelles progressives
-3. ~~**Jelly Bombs**~~ - FAIT - Bombes avec explosion 3x3, étincelles
-4. **Page Paramètres** - Son, musique, vibrations, langue
-5. **Page Messages** - Chat entre joueurs, communication en temps réel
-6. **Notifications push** - Alertes et rappels
-7. **Nouveaux modes de jeu** - Défis, tournois, etc.
-8. **Power-ups** - Bonus spéciaux dans le jeu
-
----
-
-## Date: 7 Février 2026
-
----
-
-## Session du 7 Février 2026 - Module Duel & Système d'Amis
-
-### 1. Système de Duel - Améliorations UI
-
-#### Page Duel (duel_screen.dart)
-- **Onglets** : Duels, Amis, En Ligne, Tous
-- **Barre de recherche** : Texte brun foncé (#5D3A1A) pour meilleure lisibilité
-- **Cartes joueurs** : Utilisation de `Stack` avec `Positioned` pour positionnement précis des éléments
-
-#### Éditeurs de Layout HTML
-- `layout_editor.html` - Éditeur pour carte joueur standard
-- `layout_editor_amis.html` - Éditeur pour carte ami (avec bouton Messages)
-- Fonctionnalités : Drag & drop souris + déplacement clavier (flèches 1px, Shift+flèches 5px)
-
-### 2. Positionnement des Cartes Joueurs
-
-#### Carte Standard (Onglets En Ligne / Tous)
-```dart
-// Positions finales
-Photo: left=20, top=22 (46x46px)
-Nom: left=70, top=33
-Pastille: left=208, top=37 (16x16px)
-Bouton DÉFIER: left=249, top=26
-```
-
-#### Carte Ami (Onglet Amis)
-```dart
-// Positions finales
-Photo: left=20, top=22 (46x46px)
-Nom: left=70, top=33
-Pastille: left=160, top=37 (16x16px)
-Bouton Messages: left=182, top=29 (vert, non cliquable)
-Bouton DÉFIER: left=266, top=29
-```
-
-### 3. Pastille En Ligne / Hors Ligne
-- **Vert** : Joueur en ligne (actif < 5 minutes)
-- **Rouge** : Joueur hors ligne
-- Badge "Ami" supprimé (redondant dans l'onglet Amis)
-
-### 4. Boutons Accepter/Refuser
-- Remplacement des icônes ✓/✕ par des boutons texte
-- **Bouton Refuser** : Dégradé rouge (#FF6B6B → #EE5A5A)
-- **Bouton Accepter** : Dégradé vert (#66BB6A → #43A047)
-- Style candy avec bordure blanche et ombre
-
-### 5. Badge Notification Défis
-- Déplacé de l'onglet "Duels" vers le header "DÉFIS REÇUS"
-- Plus grand et centré à droite du titre
-- Affiche le nombre de défis en attente
-
-### 6. Système de Notifications en Temps Réel
-
-#### Rafraîchissement Automatique
-- Timer toutes les 5 secondes pour vérifier nouveaux duels/demandes d'amis
-- Fonctionne sur toutes les pages (Duel, Jeu)
-
-#### Notifications MaterialBanner (en haut)
-- **Style** : Marges 16px horizontal, padding 10px vertical, elevation 6
-- **Défi reçu** : Fond rose (#E91E63), icône manette
-- **Demande d'ami** : Fond orange, icône person_add
-- **Auto-fermeture** : 5 secondes
-- **Conditions** : Ne s'affiche pas si déjà sur l'onglet correspondant
-
-#### Pendant le Jeu
-- Notification non cliquable (bouton "OK" seulement)
-- Ne sort pas du jeu en cours
-- Même style élégant
-
-### 7. Exclusion des Amis de l'Onglet "Tous"
-- `getAllPlayers()` filtre maintenant les amis existants
-- Évite les doublons entre onglets
-
-### 8. Recherche Instantanée
-- Correction : recherche déclenche pour l'onglet index 3 (Tous) au lieu de 2
-- Recherche en temps réel sans bouton
-
-### 9. Icône de l'Application
-- Nouvelle icône "Sugar Rush" : `app_icon.png`
-- Fond adaptatif : `#1a0a2e` (violet foncé)
-
----
-
-## Fichiers Modifiés (7 Février)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/ui/screens/duel_screen.dart` | Refonte complète UI, Stack/Positioned, notifications, temps réel |
-| `lib/ui/screens/game_screen.dart` | Notifications pendant le jeu |
-| `lib/services/friend_service.dart` | `acceptFriendRequestByPlayerId`, `declineFriendRequestByPlayerId`, exclusion amis |
-| `admin/admin.js` | Gestion demandes d'amis pour faux profils |
-| `admin/index.html` | Section demandes d'amis |
-| `pubspec.yaml` | Asset Cadreonline.png, nouvelle icône app |
-| `layout_editor.html` | Éditeur layout carte standard |
-| `layout_editor_amis.html` | Éditeur layout carte ami |
-
----
-
-## Tables Supabase (Rappel)
-
-### Table `duels`
-```sql
 CREATE TABLE duels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   challenger_id UUID REFERENCES players(id),
@@ -834,13 +133,11 @@ CREATE TABLE duels (
   challenger_score INTEGER,
   challenged_score INTEGER,
   winner_id UUID REFERENCES players(id),
+  bet_amount INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT NOW(),
   expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '24 hours')
 );
-```
 
-### Table `friends`
-```sql
 CREATE TABLE friends (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   player_id UUID REFERENCES players(id),
@@ -849,136 +146,131 @@ CREATE TABLE friends (
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(player_id, friend_id)
 );
+
+-- Aussi : messages, typing_status (avec FK vers players)
+```
+
+### Suppression cascade d'un joueur
+Ordre : messages → typing_status → duels → friends → player_stats → players
+
+---
+
+## Flux de Navigation
+
+```
+Splash → Auth (Google / Apple / Sans compte + prénom) → Menu
+  ├── JOUER → Game Screen
+  ├── Profil → Profile Screen
+  ├── Classement → Leaderboard Screen
+  ├── Duels → Duel Screen (4 onglets)
+  └── Déconnexion → Auth Screen
+```
+
+### Session anonyme
+- Premier lancement : dialogue prénom obligatoire → sauvegarde SharedPreferences + DB
+- Lancements suivants : main.dart détecte prénom dans SharedPreferences → menu direct
+- `getOrCreatePlayer()` appelé dans `_loadUserData()` pour initialiser playerId
+
+### Session Apple Sign-In (Build 25)
+- `checkSession()` détecte le provider via `appMetadata['provider']` (apple vs google)
+- Apple : `device_id` = `'apple_$email'` (préfixe `apple_`) — Google : `device_id` = `email`
+- Le nom Apple n'est fourni qu'à la **première connexion** → sauvegardé dans SharedPreferences (`apple_user_name`)
+- `_appleUserName` : champ en mémoire pour le getter `userName` (Apple n'a pas `full_name` dans userMetadata)
+- Le prénom est aussi sauvegardé sous clé `'userName'` pour que `menu_screen` le retrouve
+- `signOut()` nettoie `userName`, `apple_user_name` et `_appleUserName`
+
+---
+
+## Système Bot (Faux Profils)
+
+### Détection
+Bots identifiés par `device_id.startsWith('fake_')` dans la table `players`.
+
+### Algorithme de duel bot (simulation locale sur le téléphone)
+- **Score typique** = 40-60% du `_highScore` du joueur
+- **Limite** : max 25 pts/seconde
+
+| Scénario | Probabilité | Score bot | Durée |
+|----------|-------------|-----------|-------|
+| Bot PERD | 45% | 40-80% du score typique | 40s-120s |
+| Bot GAGNE | 45% | 110-150% du score typique | 80s-220s |
+| Match serré | 10% | 85-115% du score typique | 60s-180s |
+
+### Score par bursts progressifs
+| Phase | Lignes | Points/burst | Pause |
+|-------|--------|-------------|-------|
+| 0-25% | 1 | 100-250 | 8-18s |
+| 25-50% | 1-2 | 100-550 | 5-14s |
+| 50-75% | 1-3 | 100-900 | 5-14s |
+| 75-100% | 1-4 | 100-1500 | 3-10s |
+
+Première ligne entre 12 et 22 secondes.
+
+### Soumission différée
+Si le joueur quitte avant la fin du bot : infos sauvées dans SharedPreferences (`pending_bot_*`), score soumis au retour via `_checkPendingBotCompletion()`.
+
+### Simulation présence en ligne
+- **Démarrage** : 20-50% des bots mis en ligne (min 1, max 8), refresh toutes les 45s
+- **Rotation** : changement de groupe toutes les 3-5 minutes
+- **Mouvement live** : toutes les 15-40s, un bot se connecte/déconnecte
+- **Auto-équilibrage** : <15% en ligne → 85% chance connexion ; >45% → 70% chance déconnexion
+
+---
+
+## Système Sugar Rush
+
+- Jauge se remplit en complétant des lignes (animation Lerp)
+- À 100% : multiplicateur x5 pendant 10 secondes, overlay unique avec confettis
+- Étincelles progressives sur l'étoile (3 à 22 selon remplissage, bouquet final ≥90%)
+- Particules d'énergie des lignes vers la jauge (12 max, taille 16px, traînée 14 positions)
+
+---
+
+## Système Audio
+
+- **Musique** (mutable via bouton) : intro + game music
+- **Effets** (toujours actifs) : placement (`place.mp3`), combos, explosions
+- Bouton mute : cercle 40px en haut à droite, rose = actif, gris = coupé
+
+---
+
+## Notifications Temps Réel
+
+- Timer 5s pour vérifier nouveaux duels/demandes d'amis
+- MaterialBanner en haut : rose (défi reçu), orange (demande ami), auto-fermeture 5s
+- Pendant le jeu : notification non cliquable (bouton OK uniquement)
+
+---
+
+## Commandes Build
+
+```bash
+# APK Android
+flutter build apk --release
+
+# Clean build
+flutter clean && flutter build apk --release
+
+# APK location
+build/app/outputs/flutter-apk/app-release.apk
+
+# Icônes
+dart run flutter_launcher_icons
+
+# iOS via Codemagic : push GitHub → build automatique → TestFlight
 ```
 
 ---
 
----
-
-## Date: 7 Février 2026 (Suite)
-
----
-
-## Session du 7 Février 2026 - Notifications Push OneSignal
-
-### 1. Configuration OneSignal
-
-#### Pourquoi OneSignal ?
-- Plus simple que Firebase Cloud Messaging + Supabase Edge Functions
-- Interface web pour configurer iOS et Android
-- SDK Flutter officiel (`onesignal_flutter`)
-
-#### Identifiants OneSignal
-```
-App ID: 01e66a57-6563-4572-b396-ad338b648ddf
-REST API Key: os_v2_app_ahtguv3fmncxfm4wvuzywzen34cc2kxpxnsezp55pu5efdzorqujkxrvasncfgnjgjs62pt2pibtjihkuypdt7new5v6jaa3zuzosja
-```
-
-### 2. Configuration iOS (APNs)
-
-#### Clé APNs créée dans Apple Developer
-- **Nom** : CandyPuzzlePush
-- **Key ID** : 999274RLFU
-- **Team ID** : Z8MD4FCA29
-- **Bundle ID** : com.amazingevent.candypuzzle
-
-#### Fichiers iOS modifiés
-```
-ios/Runner/Runner.entitlements → aps-environment = production
-ios/Runner/Info.plist → UIBackgroundModes (fetch, remote-notification)
-ios/Runner/Info.plist → FirebaseAppDelegateProxyEnabled = false
-```
-
-### 3. Configuration Android
-
-#### Icône de notification personnalisée
-- Fichier : `ic_stat_onesignal_default.png`
-- Format : Blanc sur fond transparent (règle Android)
-- Emplacements :
-  - `android/app/src/main/res/drawable-mdpi/` (24x24)
-  - `android/app/src/main/res/drawable-hdpi/` (36x36)
-  - `android/app/src/main/res/drawable-xhdpi/` (48x48)
-  - `android/app/src/main/res/drawable-xxhdpi/` (72x72)
-  - `android/app/src/main/res/drawable-xxxhdpi/` (96x96)
-
-### 4. Service de Notifications (Flutter)
-
-#### Fichier : `lib/services/notification_service.dart`
-```dart
-class NotificationService {
-  static const String _oneSignalAppId = '01e66a57-6563-4572-b396-ad338b648ddf';
-
-  static Future<void> initialize() async {
-    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
-    OneSignal.initialize(_oneSignalAppId);
-    OneSignal.Notifications.requestPermission(true);
-  }
-
-  static Future<void> updateTokenAfterLogin() async {
-    final playerId = supabaseService.playerId;
-    if (playerId == null) return;
-    await OneSignal.login(playerId);
-    await OneSignal.User.addTags({'player_id': playerId});
-  }
-
-  static Future<void> sendNewMessage({...}) async {
-    await _sendNotification(
-      targetPlayerId: targetPlayerId,
-      title: senderName,
-      body: preview,
-      data: {'type': 'new_message'},
-    );
-  }
-}
-```
-
-### 5. Edge Function Supabase
-
-#### Fichier : `supabase/functions/send-onesignal-notification/index.ts`
-- Reçoit les paramètres : target_player_id, title, body, image_url, data
-- Appelle l'API REST OneSignal pour envoyer la notification
-- Secret requis : `ONESIGNAL_REST_API_KEY` (dans Supabase Dashboard → Edge Functions → Secrets)
-
-### 6. Admin Panel - Envoi de notifications
-
-#### Modification : `admin/admin.js`
-- Fonction `sendChatMessage()` appelle maintenant l'Edge Function
-- Envoi automatique de notification push quand un message est envoyé depuis l'admin
-
-```javascript
-// Après insertion du message
-await supabaseClient.functions.invoke('send-onesignal-notification', {
-  body: {
-    target_player_id: chatPartnerId,
-    title: sender.username || 'Nouveau message',
-    body: content.length > 50 ? content.substring(0, 50) + '...' : content,
-    data: { type: 'new_message' }
-  }
-});
-```
-
-### 7. TestFlight - Tests Externes
-
-#### Problème rencontré
-- Les testeurs externes ne recevaient pas d'invitation
-- Cause : Le build n'était pas assigné au groupe externe
-
-#### Solution
-1. App Store Connect → TestFlight → Builds iOS
-2. Cliquer sur le build (ex: 1.0.0 build 20)
-3. Section "Groupes" → Cliquer sur "+"
-4. Ajouter le groupe externe "Candy"
-5. Les testeurs externes doivent attendre l'approbation Apple (Beta App Review)
-
-#### Types de testeurs
-- **Internes** : Membres de l'équipe App Store Connect (pas d'approbation requise)
-- **Externes** : N'importe quelle adresse email (approbation Apple requise)
-
-### 8. Dépendances ajoutées
+## Dépendances Principales
 
 ```yaml
-# pubspec.yaml
 dependencies:
+  flutter: { sdk: flutter }
+  shared_preferences: ^2.2.2
+  audioplayers: ^5.2.1
+  supabase_flutter: ^2.3.0
+  google_sign_in: ^6.1.6
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
   onesignal_flutter: ^5.1.0
@@ -986,583 +278,76 @@ dependencies:
 
 ---
 
-## Fichiers Modifiés/Créés (7 Février - Notifications)
+## Points Importants à Retenir
 
-| Fichier | Modification |
-|---------|-------------|
-| `lib/services/notification_service.dart` | Réécrit pour OneSignal |
-| `lib/services/message_service.dart` | Appel NotificationService.sendNewMessage |
-| `lib/main.dart` | Initialisation OneSignal |
-| `admin/admin.js` | Envoi notifications depuis admin |
-| `ios/Runner/Runner.entitlements` | aps-environment = production |
-| `ios/Runner/Info.plist` | Background Modes + FirebaseAppDelegateProxyEnabled |
-| `android/app/src/main/res/drawable-*/ic_stat_onesignal_default.png` | Icône notification |
-| `supabase/functions/send-onesignal-notification/index.ts` | Edge Function |
-| `supabase/config.toml` | Configuration Edge Function |
-| `pubspec.yaml` | Version 1.0.0+20, dépendances OneSignal |
-
----
-
-## Checklist iOS Notifications Push
-
-| Élément | Status |
-|---------|--------|
-| Clé APNs (.p8) créée dans Apple Developer | ✅ |
-| Clé APNs configurée dans OneSignal | ✅ |
-| Push Notifications activé dans App ID | ✅ |
-| Runner.entitlements → aps-environment = production | ✅ |
-| Info.plist → UIBackgroundModes | ✅ |
-| Info.plist → FirebaseAppDelegateProxyEnabled = false | ✅ |
-| CODE_SIGN_ENTITLEMENTS dans project.pbxproj | ✅ |
+- **iOS TestFlight** : toujours compiler en mode RELEASE (Debug = crash immédiat iOS 14+)
+- **Google Sign-In iOS** : nécessite un Client ID spécifique + URL Scheme inversé dans Info.plist
+- **Joueurs anonymes** : prénom obligatoire, non modifiable, session via SharedPreferences
+- **Best score** : mis à jour en temps réel pendant le jeu (`if (_score > _highScore)`)
+- **Game Screen layout** : positionnement absolu via Stack/Positioned (pourcentages écran)
+- **Boutons Game Over** : layout avec `Expanded` dans un `Row` pour éviter dépassement
+- **Icône iOS** : pas de transparence (`remove_alpha_ios: true`, fond `#87CEEB`)
+- **Icône notification Android** : blanc sur transparent (`ic_stat_onesignal_default.png`)
+- **Suppression profil admin** : cascade obligatoire (messages → typing → duels → friends → stats → player)
+- **Chiffrement TestFlight** : répondre "Aucun des algorithmes mentionnés" (HTTPS standard iOS)
+- **Apple Sign-In** : `checkSession()` DOIT détecter le provider Apple vs Google (sinon boucle navigation infinie)
+- **Apple Sign-In** : le nom n'est donné qu'à la 1ère connexion → toujours sauvegarder dans SharedPreferences
 
 ---
 
-## Checklist Android Notifications Push
+## Système de Bonbons (Build 26 — Implémenté)
 
-| Élément | Status |
-|---------|--------|
-| Firebase configuré dans OneSignal | ✅ |
-| ic_stat_onesignal_default.png (blanc/transparent) | ✅ |
-| onesignal_flutter dans pubspec.yaml | ✅ |
+### Monnaie du jeu
+- **500 bonbons** offerts à l'inscription (valeur par défaut dans `player_stats.candies`)
+- Sources de gain :
+  - Partie solo terminée : 10-50 bonbons (score / 200, clamped)
+  - Compléter une ligne : 2 bonbons par ligne
+  - Combo (2+ lignes en enchaînement) : 5 × comboCount bonbons
+  - Connexion quotidienne : 30 bonbons (+10/jour consécutif, max 100)
+  - Gagner un duel : mise × 2 + 10 bonbons bonus
+  - Nouveau record perso : +100 bonbons
+- **Mise en duel** : minimum 20, défaut 50, max = solde. Popup sélection (20/50/100/Tout)
+- **Pas de bonbons = pas de duel** (< 20 → message "Joue en solo pour gagner des bonbons !")
+- Solde affiché dans le header du menu + carte dorée dans le profil + badge mise sur les duels
+- `stats_service.dart` : `candies`, `addCandies()`, `removeCandies()`, `canAffordDuel`, `checkDailyLogin()`
+- `game_screen.dart` : `_sessionCandiesEarned` accumulé pendant la partie, affiché au game over
 
----
-
-## Date: 8 Février 2026
-
----
-
-## Session du 8 Février 2026 - Corrections UI Game Over
-
-### 1. Boutons Game Over trop grands
-
-#### Problème
-- Les boutons QUITTER et REJOUER étaient trop grands
-- Le bouton REJOUER sortait de l'écran (coupé à droite)
-
-#### Solution - Réduction des tailles
-```dart
-// Avant → Après
-padding: horizontal: 22, vertical: 14 → horizontal: 14, vertical: 10
-icon container padding: 6 → 4
-icon size: 22 → 18
-font size: 16 → 14
-letter spacing: 1.5 → 1.2
-SizedBox width: 10 → 8
-```
-
-### 2. Best Score en temps réel
-
-#### Problème
-- Quand le joueur dépasse son meilleur score, l'affichage "BEST" ne se mettait pas à jour pendant le jeu
-- Le Best score restait figé jusqu'au Game Over
-
-#### Solution
-- Ajout d'une vérification après chaque mise à jour du score :
-```dart
-// Dans setState après _score += ...
-if (_score > _highScore) {
-  _highScore = _score;
-}
-```
-- Ajouté à 2 endroits :
-  1. Score des lignes complétées (ligne ~948)
-  2. Score des explosions Jelly Bomb (ligne ~676)
-
-### 3. TestFlight - Lien Public
-
-#### Fonctionnement du lien public
-- Le lien reste **toujours le même** : `testflight.apple.com/join/Kpujctb1`
-- Le lien est lié au **groupe**, pas au build
-- Les nouvelles versions sont automatiquement disponibles via le même lien
-
-#### Beta App Review
-- Première soumission : peut prendre 24-48h
-- Versions suivantes : généralement approuvées automatiquement (quelques minutes/heures)
-- Statut visible : "En attente de vérification" → "Approuvé"
-
-#### Types de testeurs
-| Type | Approbation Apple | Ajout |
-|------|------------------|-------|
-| Internes | Non requise | Membres équipe App Store Connect |
-| Externes | Requise (Beta Review) | N'importe quel email |
-
-### 4. Avertissement iOS Info.plist
-
-#### Message
-```
-90683: Missing purpose string in Info.plist - NSLocationWhenInUseUsageDescription
-```
-
-#### Explication
-- C'est un **avertissement**, pas une erreur
-- Provient de OneSignal qui inclut la capacité de localisation
-- N'empêche pas le build de fonctionner
-- Peut être ignoré si l'app n'utilise pas la localisation
+### Connexion quotidienne
+- `checkDailyLogin()` dans stats_service, appelé dans `menu_screen._loadUserData()`
+- Compare `last_login_date` (YYYY-MM-DD) avec aujourd'hui
+- Streak incrémenté si jour consécutif, reset sinon
+- Popup "Bonus quotidien !" avec montant et jour de streak
 
 ---
 
-## Session du 8 Février 2026 - Partie 2 : Audio & Boutons Game Over
+## Système de Combo (Build 26 — 3 coups de grâce)
 
-### 5. Bouton Mute/Unmute Musique
-
-#### Implémentation dans `audio_service.dart`
-- Ajout de `bool _isMuted = false` et getter `isMuted`
-- `toggleMute()` : met le volume des players musique à 0 (muted) ou restaure les volumes originaux
-- `setMuted(bool)` : méthode utilitaire
-- **Important** : le mute ne coupe que la **musique** (intro + game), les **effets sonores** (place, combo, explosion) continuent de jouer
-
-#### Bouton visuel dans `game_screen.dart`
-- **Position** : en haut à droite, sous le score BEST
-- **Apparence** : cercle 40px, bordure blanche
-  - **Rose/fuchsia** quand le son est actif (icône `volume_up`)
-  - **Gris** quand le son est coupé (icône `volume_off`)
-- Appelle `audioService.toggleMute()` au tap
-
-### 6. Changement Musique de Jeu
-
-- Nouveau fichier `assets/sounds/music.mp3` remplacé (même nom)
-- Le code pointait déjà vers `sounds/music.mp3` → aucune modification nécessaire
-
-### 7. Correction Son de Placement (place.mp3)
-
-#### Problème
-- Le nouveau son `place.mp3` n'était pas entendu
-- **Cause** : `game_screen.dart` ligne 303 utilisait son propre `_placePlayer` local avec l'ancien fichier `place.mp4`
-- Le `audioService` avait été corrigé mais le player local du game_screen non
-
-#### Solution
-- `_placePlayer.play(AssetSource('sounds/place.mp4'))` → `_placePlayer.play(AssetSource('sounds/place.mp3'))`
-- Également corrigé dans `audio_service.dart` : `sounds/place.mp4` → `sounds/place.mp3`
-
-### 8. Boutons Game Over - Deuxième correction (dépassement)
-
-#### Problème persistant
-- Les boutons QUITTER et REJOUER dépassaient encore du cadre rose Game Over
-- Visible sur screenshot : REJOUER coupé à droite
-
-#### Solution - Layout adaptatif avec Expanded
-```dart
-// AVANT : Row avec MainAxisSize.min (pas de contrainte de largeur)
-Row(
-  mainAxisSize: MainAxisSize.min,
-  children: [_buildCandyButton(...), SizedBox(width: 15), _buildCandyButton(...)],
-)
-
-// APRÈS : Row avec Expanded (boutons se partagent l'espace)
-Row(
-  children: [
-    Expanded(child: _buildCandyButton(...)),
-    SizedBox(width: 12),
-    Expanded(child: _buildCandyButton(...)),
-  ],
-)
-```
-
-#### Réduction supplémentaire des tailles
-```dart
-// Avant → Après
-padding: horizontal: 14, vertical: 10 → horizontal: 10, vertical: 8
-icon size: 18 → 15
-font size: 14 → 12
-letter spacing: 1.2 → 1.0
-SizedBox width: 8 → 6
-```
+- **Ancien** : combo reset si pas de ligne au coup suivant immédiat (`_lastMoveWasLine`)
+- **Nouveau** : `_comboGraceMovesLeft` = 3 coups de grâce
+  - Ligne complétée → `_comboCount += linesCleared`, `_comboGraceMovesLeft = 3`
+  - Placement sans ligne → `_comboGraceMovesLeft--`
+  - Si atteint 0 → `_comboCount = 0` (combo perdu)
+- Multiplicateur inchangé : `_comboCount * 0.5 + 0.5` (x2=1.5, x3=2.0, x5=3.0)
+- Plus accessible, plus stratégique, moins frustrant
 
 ---
 
-## Fichiers Modifiés (8 Février - Partie 2)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/services/audio_service.dart` | Ajout `_isMuted`, `toggleMute()` (musique seulement), `setMuted()`, correction `place.mp4` → `place.mp3` |
-| `lib/ui/screens/game_screen.dart` | Bouton mute, correction `place.mp3`, boutons Game Over `Expanded` + tailles réduites |
-| `assets/sounds/music.mp3` | Nouveau fichier musique de jeu |
-| `assets/sounds/place.mp3` | Nouveau son de placement (remplacé 2 fois) |
-
----
-
-## Historique des Builds TestFlight (Récent)
-
-| Build | Version | Contenu | Status |
-|-------|---------|---------|--------|
-| 20 | 1.0.0+20 | Notifications push OneSignal | En attente de vérification |
-| 21 | 1.0.0+21 | Fix boutons + Best score temps réel | Compilé |
-
----
-
-## Date: 8 Février 2026 (Suite)
-
----
-
-## Session du 8 Février 2026 - Partie 3 : Système Bot Intelligent + Simulation En Ligne
-
-### 1. Bot Simulation sur le Téléphone
-
-#### Principe
-Les bots (faux profils) jouent directement sur le téléphone du joueur, sans serveur ni page web ouverte. Quand un joueur défie un faux profil, l'app détecte que c'est un bot et simule l'adversaire localement.
-
-#### Détection des bots
-```dart
-// Dans duel_service.dart
-Future<bool> isBot(String playerId) async {
-  final response = await _client.from('players')
-      .select('device_id').eq('id', playerId).single();
-  final deviceId = response['device_id'] as String?;
-  return deviceId != null && deviceId.startsWith('fake_');
-}
-```
-
-#### Flow du duel bot
-1. Joueur clique DÉFIER sur un faux profil
-2. `duel_screen.dart` détecte le bot → auto-accepte le duel en mode `live`
-3. Navigue vers `GameScreen` avec `isBotDuel: true`
-4. `GameScreen` simule l'adversaire : countdown, score progressif, game over
-5. Le bot réutilise le même UI que les duels temps réel (`_isRealtimeDuel = true`)
-
-### 2. Algorithme Bot Intelligent
-
-#### Calibration au niveau du joueur
-- **Score typique** = 40-60% du `_highScore` (car le high score = meilleure partie, pas une partie normale)
-- Le bot NE PEUT PAS avoir un score irréaliste par rapport au temps joué
-- **Limite** : max 25 pts/seconde (vérifié avec `_botGameOverTime * 25`)
-
-#### Décision Win/Lose
-| Scénario | Probabilité | Score bot | Durée |
-|----------|-------------|-----------|-------|
-| Bot PERD | 45% | 40-80% du score typique | 40s-120s |
-| Bot GAGNE | 45% | 110-150% du score typique | 80s-220s |
-| Match serré | 10% | 85-115% du score typique | 60s-180s |
-
-#### Score par paliers réalistes (bursts)
-Le score monte par "bursts" qui simulent de vraies lignes complétées, pas une courbe lisse :
-
-| Phase du jeu | Lignes | Points par burst | Pause entre bursts |
-|-------------|--------|------------------|--------------------|
-| 0-25% (début) | 1 seule | 100-250 | 8-18 secondes |
-| 25-50% | 1-2 | 100-550 | 5-14 secondes |
-| 50-75% | 1-3 | 100-900 | 5-14 secondes |
-| 75-100% (fin) | 1-4 | 100-1500 | 3-10 secondes |
-
-**Première ligne** : entre 12 et 22 secondes (réaliste, un vrai joueur met du temps à placer ses premières pièces)
-
-#### Le bot peut finir AVANT le joueur
-- Quand `_botWillLose = true`, le bot a son game over entre 40s et 120s
-- Le joueur voit le score de l'adversaire passer en rouge ("TERMINÉ" dans le label)
-- Le joueur continue à jouer normalement
-
-### 3. Soumission Différée du Score Bot
-
-#### Problème initial
-Quand le joueur quittait pendant l'attente, le score du bot était soumis immédiatement → le résultat apparaissait en 3 secondes (suspect)
-
-#### Solution : Système de soumission différée
-1. **Pendant le jeu** : seul le score du joueur est soumis à la DB quand il perd
-2. **Si le bot finit pendant le jeu** : son score est soumis normalement via le timer
-3. **Si le joueur quitte avant** : les infos du bot sont sauvegardées dans `SharedPreferences` :
-   - `pending_bot_duel_id`, `pending_bot_opponent_id`
-   - `pending_bot_score` (score projeté = actuel + 10-20 pts/s pendant le temps restant)
-   - `pending_bot_finish_at` (timestamp = maintenant + 30s à 2min)
-4. **Au retour sur Menu ou Duels** : vérification via `_checkPendingBotCompletion()`
-   - Si le temps est écoulé → soumet le score du bot → résultat visible
-   - Sinon → planifie un Timer pour le moment exact
-
-### 4. Simulation Bots En Ligne
-
-#### Problème
-Tous les faux profils apparaissaient hors ligne (pastille rouge) car leur `last_seen_at` n'était jamais mis à jour.
-
-#### Solution : 3 niveaux de simulation
-
-**Niveau 1 : Rotation au démarrage** (`menu_screen.dart`)
-- À l'ouverture de l'app : 20-50% des bots mis "en ligne" aléatoirement (min 1, max 8)
-- Leur `last_seen_at` est varié (0-30 secondes dans le passé)
-- Rafraîchissement toutes les 45 secondes pour maintenir le statut
-- Rotation complète toutes les 3-5 minutes (change le groupe de bots connectés)
-
-**Niveau 2 : Mouvement en live** (`duel_screen.dart`)
-- Toutes les 15-40 secondes, UN bot se connecte ou se déconnecte
-- Auto-équilibrage : si <15% en ligne → 85% chance de connexion, si >45% → 70% chance de déconnexion
-- La liste "En Ligne" se met à jour en temps réel grâce au channel Supabase Realtime sur `last_seen_at`
-
-**Niveau 3 : Maintenance** (`friend_service.dart`)
-- `simulateBotOnlineStatus()` : rotation complète des bots en ligne
-- `refreshBotOnlineStatus()` : rafraîchit le `last_seen_at` des bots actuels
-- `randomBotToggle()` : connecte ou déconnecte UN bot aléatoire
-
-### 5. Refonte Bandeau Duel (Game Screen)
-
-#### Avant
-- Gauche : photo adversaire + nom + "EN DIRECT"
-- Droite : score adversaire (petit) + mon score (petit)
-
-#### Après
-- **Gauche** : ma photo (bordure dorée) + mon prénom sous la photo + mon score (gros, doré)
-- **Centre** : VS (gras, italique)
-- **Droite** : score adversaire (gros, rouge) + prénom adversaire sous la photo + photo adversaire (bordure rouge)
-- Photos 38px, scores fontSize 20, prénoms tronqués à 8 caractères
-
-### 6. Bug Fix : Score Bot Irréaliste
-
-#### Problème
-Bot faisait 35069 en 3:03 alors que le joueur faisait 5290 en 3:53 (6x plus de score en 45s de moins)
-
-#### Causes
-1. `playerLevel = _highScore` → utilisait le record absolu au lieu d'un score typique
-2. Ratio bot gagnant jusqu'à 170% du high score → scores astronomiques
-3. Première ligne à 2-5s → beaucoup trop tôt
-4. Pas de limite de score/seconde
-
-#### Corrections
-1. Score typique = 40-60% du high score (pas 100%)
-2. Ratio bot gagnant = 110-150% du score typique
-3. Première ligne à 12-22 secondes
-4. Bursts progressifs (petits au début, gros en fin de partie)
-5. Limite : max 25 pts/seconde
-
----
-
-## Fichiers Modifiés (8 Février - Partie 3)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/ui/screens/game_screen.dart` | Bot intelligent (algorithme, bursts, soumission différée), refonte bandeau duel (photos+prénoms+VS) |
-| `lib/ui/screens/duel_screen.dart` | `_checkPendingBotCompletion()`, `_startBotMovement()` (bots en live) |
-| `lib/ui/screens/menu_screen.dart` | `_startBotOnlineSimulation()`, `_checkPendingBotCompletion()`, rotation bots |
-| `lib/services/friend_service.dart` | `simulateBotOnlineStatus()`, `refreshBotOnlineStatus()`, `randomBotToggle()` |
-| `lib/services/duel_service.dart` | `isBot()`, `acceptDuelLive()`, `fallbackToAsync()` |
-| `admin/index.html` | Lien vers bot-auto.html |
-
----
-
-## Variables Bot dans game_screen.dart
-
-```dart
-bool _isBotDuel = false;
-Timer? _botScoreTimer;
-int _botFinalScore = 0;       // Score final calculé
-int _botDuration = 0;         // Durée totale du bot
-int _botCurrentScore = 0;     // Score affiché actuellement
-DateTime? _botStartTime;      // Début de la simulation
-bool _botFinished = false;    // Le bot a terminé
-bool _botWillLose = false;    // Le bot va perdre (game over avant le joueur)
-int _botGameOverTime = 0;     // Quand le bot aura son game over
-List<_BotScoreBurst> _botScoreBursts = [];  // Bursts de score planifiés
-```
-
----
-
----
-
-## Date: 8 Février 2026 (Suite 2)
-
----
-
-## Session du 8 Février 2026 - Partie 4 : Système de Prénom + Corrections UI
-
-### 1. Dialogue de Prénom au Premier Lancement
-
-#### Problème
-Tous les joueurs anonymes (mode "Jouer sans compte") étaient enregistrés avec le nom "Joueur" dans la base de données. Si 200 personnes se connectent, elles s'appellent toutes "Joueur".
-
-#### Solution : Dialogue de prénom obligatoire
-- **Écran de connexion** (`auth_screen.dart`) : quand le joueur clique "Jouer sans compte", un dialogue candy apparaît :
-  - Titre : "Comment tu t'appelles ?"
-  - Sous-titre : "Les autres joueurs verront ce nom"
-  - Champ texte : max 15 caractères, auto-capitalisation
-  - Bouton : "C'est parti !"
-- Le prénom est sauvegardé dans **SharedPreferences** (`userName`) ET dans la **base de données** (`players.username`)
-- Le dialogue est `barrierDismissible: false` → le joueur DOIT entrer un prénom
-
-#### Flow complet
-1. App ouvre → écran de connexion (Google / Apple / Sans compte)
-2. Joueur clique "Jouer sans compte" → dialogue prénom
-3. Tape son prénom → "C'est parti !" → Menu principal
-4. Lancements suivants → Menu directement (session existante + prénom sauvé)
-
-#### Cas des anciens joueurs anonymes sans prénom
-- Si un joueur anonyme arrive au menu sans prénom sauvé dans SharedPreferences → redirigé automatiquement vers l'écran de connexion
-- Il peut alors choisir Google/Apple OU "Sans compte" avec saisie du prénom
-
-### 2. Prénom Non Modifiable
-
-#### Règle
-Un joueur anonyme ne peut PAS changer son prénom après l'avoir mis.
-
-#### Implémentation dans `profile_screen.dart`
-- `onTap: null` sur le GestureDetector du nom (ligne 223)
-- Texte "Tap pour modifier" + icône crayon remplacés par "Joueur libre"
-- Les joueurs Google gardent l'affichage "Compte Google connecté"
-
-### 3. Lecture du Prénom sur le Menu
-
-#### Problème
-Le menu affichait toujours "Joueur" en haut à gauche même après avoir saisi le prénom.
-
-#### Cause
-`_loadUserData()` dans `menu_screen.dart` ne lisait le nom que depuis `supabaseService.userName` (utilisateurs Google). Pour les anonymes, le nom restait "Joueur" par défaut.
-
-#### Solution
-Ajout d'un fallback dans `_loadUserData()` :
-```dart
-} else {
-  final prefs = await SharedPreferences.getInstance();
-  final savedName = prefs.getString('userName');
-  if (savedName != null && savedName.isNotEmpty && mounted) {
-    setState(() => _userName = savedName);
-  } else if (mounted) {
-    // Pas de prénom → renvoyer vers l'écran de connexion
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const AuthScreen()),
-      (route) => false,
-    );
-  }
-}
-```
-
-### 4. Texte Invisible dans le Champ de Saisie
-
-#### Problème
-Quand le joueur tapait son prénom, le texte était invisible (blanc sur fond blanc).
-
-#### Cause
-Le `TextField` n'avait pas de couleur définie → prenait la couleur du thème dark (blanc).
-
-#### Solution
-Ajout de `color: Color(0xFF880E4F)` (rose foncé) dans le style du TextField :
-```dart
-style: const TextStyle(
-  fontSize: 18,
-  fontWeight: FontWeight.bold,
-  color: Color(0xFF880E4F),  // ← Rose foncé bien visible sur fond blanc
-),
-```
-
----
-
-## Fichiers Modifiés (8 Février - Partie 4)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/ui/screens/auth_screen.dart` | Dialogue prénom dans `_showNameDialog()`, couleur texte rose foncé, sauvegarde DB via `getOrCreatePlayer()` |
-| `lib/ui/screens/menu_screen.dart` | Lecture prénom SharedPreferences, redirection AuthScreen si pas de prénom, suppression `_showNameDialog()` |
-| `lib/ui/screens/profile_screen.dart` | `onTap: null`, "Joueur libre" au lieu de "Tap pour modifier" |
-
----
-
----
-
-## Date: 8 Février 2026 (Suite 3)
-
----
-
-## Session du 8 Février 2026 - Partie 5 : Corrections Session Anonyme + Admin
-
-### 1. Session Anonyme Non Persistée au Relancement
-
-#### Problème
-Quand un joueur anonyme fermait et rouvrait l'app, il était renvoyé à l'écran de connexion et devait re-saisir son prénom à chaque fois.
-
-#### Cause
-Dans `main.dart`, la variable `isLoggedIn` ne vérifiait que `supabaseService.isLoggedIn` (session Google/Apple). Pour les joueurs anonymes, `_currentUser` est toujours `null` → `isLoggedIn = false` → renvoi vers AuthScreen.
-
-#### Solution
-Ajout d'une vérification SharedPreferences dans `main.dart` :
-```dart
-// Vérifier aussi si un joueur anonyme a déjà mis son prénom
-if (!hasSession) {
-  final prefs = await SharedPreferences.getInstance();
-  final savedName = prefs.getString('userName');
-  if (savedName != null && savedName.isNotEmpty) {
-    hasSession = true;
-  }
-}
-```
-Si un prénom existe dans SharedPreferences → le joueur va directement au menu.
-
-### 2. Joueur Anonyme Invisible dans les Duels
-
-#### Problème
-Après connexion en mode "sans inscription", l'onglet Duels était vide : aucun joueur visible dans aucun onglet (Duels, Amis, En Ligne, Tous).
-
-#### Cause
-Au relancement de l'app, `menu_screen._loadUserData()` lisait le prénom depuis SharedPreferences mais n'appelait PAS `supabaseService.getOrCreatePlayer()`. Sans cet appel, `playerId` restait `null` et toutes les requêtes (duels, amis, joueurs) retournaient rien.
-
-#### Solution
-Ajout de `getOrCreatePlayer()` dans le bloc anonyme de `_loadUserData()` :
-```dart
-if (savedName != null && savedName.isNotEmpty && mounted) {
-  // Initialiser le joueur dans la base de données
-  await supabaseService.getOrCreatePlayer(savedName);
-  setState(() {
-    _userName = savedName;
-  });
-}
-```
-
-### 3. Admin : Suppression de Vrais Profils Impossible
-
-#### Problème
-La fonction `deleteUser()` dans le panel admin ne pouvait pas supprimer les vrais profils. Erreur silencieuse.
-
-#### Cause
-La suppression ne nettoyait que `player_stats` puis essayait de supprimer le joueur. Mais les tables `duels`, `friends`, `messages`, `typing_status` avaient des contraintes de clé étrangère qui bloquaient la suppression.
-
-#### Solution
-Suppression en cascade de toutes les données liées dans l'ordre :
-```javascript
-// 1. Messages envoyés et reçus
-await supabaseClient.from('messages').delete()
-    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
-// 2. Statut de frappe
-await supabaseClient.from('typing_status').delete()
-    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
-// 3. Duels (challenger ou challenged)
-await supabaseClient.from('duels').delete()
-    .or(`challenger_id.eq.${userId},challenged_id.eq.${userId}`);
-// 4. Amis (dans les deux sens)
-await supabaseClient.from('friends').delete()
-    .or(`player_id.eq.${userId},friend_id.eq.${userId}`);
-// 5. Stats
-await supabaseClient.from('player_stats').delete()
-    .eq('player_id', userId);
-// 6. Enfin le joueur
-await supabaseClient.from('players').delete()
-    .eq('id', userId);
-```
-
----
-
-## Fichiers Modifiés (8 Février - Partie 5)
-
-| Fichier | Modification |
-|---------|-------------|
-| `lib/main.dart` | Import SharedPreferences, vérification prénom anonyme pour skip AuthScreen |
-| `lib/ui/screens/menu_screen.dart` | Appel `getOrCreatePlayer(savedName)` pour initialiser le playerId anonyme |
-| `admin/admin.js` | `deleteUser()` supprime messages, typing_status, duels, friends, stats avant le joueur |
-
----
-
-## Flow Complet Joueur Anonyme (Résumé Final)
-
-| Étape | Action | Résultat |
-|-------|--------|----------|
-| 1er lancement | App ouvre | → AuthScreen (Google / Apple / Sans compte) |
-| Clic "Sans compte" | Dialogue prénom | → Saisie obligatoire |
-| "C'est parti !" | Sauvegarde | SharedPreferences + DB → MenuScreen |
-| 2ème lancement | App ouvre | main.dart détecte prénom → MenuScreen direct |
-| Menu charge | `_loadUserData()` | `getOrCreatePlayer()` → playerId initialisé |
-| Duels/Amis | Requêtes DB | Fonctionnent car playerId existe |
+## Bouton "JOUER EN LIGNE" (Build 26 — Connecté aux bonbons)
+
+- Bouton violet empilé sous le bouton JOUER
+- Popup joueurs en ligne + bouton DÉFIER
+- **Flux** : vérif solde ≥ 20 → popup mise → déduction bonbons → création duel avec `betAmount`
+- Bot = auto-accept, joueur réel en ligne = DuelLobbyScreen
+- `duel.dart` : champ `betAmount` (int, défaut 0)
+- `duel_service.dart` : paramètre `betAmount` dans `createDuel()`
+- `duel_screen.dart` : badge 🍬 avec mise affichée sur chaque carte de duel
 
 ---
 
 ## Prochaines Étapes
 
-1. ~~**Notifications push**~~ - FAIT - OneSignal configuré
-2. ~~**Système Bot intelligent**~~ - FAIT - Simulation locale, score réaliste, win/lose
-3. ~~**Bots en ligne**~~ - FAIT - Simulation présence aléatoire
-4. ~~**Prénom obligatoire**~~ - FAIT - Dialogue au premier lancement, non modifiable
-5. ~~**Session anonyme persistée**~~ - FAIT - SharedPreferences + getOrCreatePlayer
-6. ~~**Admin suppression profils**~~ - FAIT - Cascade complète des données liées
-7. **Tester les notifications** - Envoyer un message et vérifier réception
-8. **Page Paramètres** - Son, musique, vibrations, langue
-9. **Push GitHub + Build Codemagic iOS** - Pousser les changements pour TestFlight
+- [ ] Tester les notifications push (envoi message → vérifier réception)
+- [ ] Page Paramètres (son, musique, vibrations, langue)
+- [ ] Nouveaux modes de jeu (défis, tournois)
+- [ ] Power-ups
+- [ ] Sugar Rush : mis de côté pour l'instant

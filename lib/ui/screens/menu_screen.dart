@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/supabase_service.dart';
+import '../../services/stats_service.dart';
 import '../../services/duel_service.dart';
 import '../../services/friend_service.dart';
 import '../../services/message_service.dart';
@@ -11,6 +12,7 @@ import 'profile_screen.dart';
 import 'auth_screen.dart';
 import 'leaderboard_screen.dart';
 import 'duel_screen.dart';
+import 'duel_lobby_screen.dart';
 import 'messages_screen.dart';
 
 class MenuScreen extends StatefulWidget {
@@ -212,6 +214,81 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
         });
       }
     }
+
+    // Vérifier le bonus de connexion quotidienne
+    await statsService.init();
+    final dailyReward = await statsService.checkDailyLogin();
+    if (dailyReward > 0 && mounted) {
+      _showDailyRewardDialog(dailyReward);
+    }
+  }
+
+  /// Affiche le popup de récompense de connexion quotidienne
+  void _showDailyRewardDialog(int reward) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2D1B69),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Text('🍬', style: TextStyle(fontSize: 28)),
+            SizedBox(width: 8),
+            Text(
+              'Bonus quotidien !',
+              style: TextStyle(
+                color: Color(0xFFFFD700),
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '+$reward bonbons',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Jour ${statsService.loginStreak}',
+              style: const TextStyle(
+                color: Color(0xFFFF6B9D),
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Reviens demain pour encore plus !',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: TextButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B9D),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              child: const Text(
+                'Super !',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -224,11 +301,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
     super.dispose();
   }
 
-  void _startGame() {
-    Navigator.push(
+  void _startGame() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const GameScreen()),
     );
+    // Rafraîchir le solde de bonbons au retour
+    if (mounted) setState(() {});
   }
 
   void _openProfile() {
@@ -266,6 +345,284 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const DuelScreen()),
+    );
+  }
+
+  /// Affiche le popup des joueurs en ligne pour lancer un duel rapide
+  Future<void> _playOnline() async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    // Afficher le popup avec un loader pendant le chargement
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return _OnlinePlayersDialog(
+          playerId: playerId,
+          onChallenge: (player) => _challengeFromPopup(player, dialogContext),
+        );
+      },
+    );
+  }
+
+  /// Lance un duel depuis le popup joueurs en ligne
+  Future<void> _challengeFromPopup(PlayerSummary player, BuildContext dialogContext) async {
+    final playerId = supabaseService.playerId;
+    if (playerId == null) return;
+
+    // Vérifier le solde de bonbons
+    if (!statsService.canAffordDuel) {
+      Navigator.pop(dialogContext);
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF2D1B69),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text(
+              'Pas assez de bonbons !',
+              style: TextStyle(color: Color(0xFFFFD700), fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🍬', style: TextStyle(fontSize: 48)),
+                const SizedBox(height: 12),
+                Text(
+                  'Tu as ${statsService.candies} bonbons.\nIl en faut au moins 20 pour un duel.',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Joue en solo pour en gagner !',
+                  style: TextStyle(color: Color(0xFFFF6B9D), fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            actions: [
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B9D),
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                  child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
+    // Fermer le popup joueurs en ligne
+    Navigator.pop(dialogContext);
+
+    // Afficher le popup de sélection de mise
+    final betAmount = await _showBetSelectionDialog();
+    if (betAmount == null || !mounted) return; // Annulé
+
+    // Déduire la mise
+    await statsService.removeCandies(betAmount);
+    await statsService.syncToCloud();
+    setState(() {}); // Rafraîchir l'affichage du solde
+
+    // Créer le duel avec la mise
+    final duel = await duelService.createDuel(
+      challengerId: playerId,
+      challengedId: player.id,
+      betAmount: betAmount,
+    );
+
+    if (duel != null && mounted) {
+      final isBot = await duelService.isBot(player.id);
+
+      if (isBot) {
+        // Bot : auto-accept et lancer la partie
+        await duelService.acceptDuelLive(duel.id);
+        if (mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => GameScreen(
+                duelSeed: duel.seed,
+                duelId: duel.id,
+                opponentId: player.id,
+                opponentName: player.username,
+                opponentPhotoUrl: player.photoUrl,
+                isBotDuel: true,
+                betAmount: betAmount,
+              ),
+            ),
+          );
+          // Rafraîchir les compteurs au retour
+          _loadUserData();
+        }
+      } else {
+        // Joueur réel : vérifier s'il est en ligne pour mode temps réel
+        final isOnline = player.isOnline;
+        if (isOnline && mounted) {
+          await duelService.acceptDuelLive(duel.id);
+          if (mounted) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DuelLobbyScreen(
+                  duel: duel,
+                  myPlayerId: playerId,
+                  opponentId: player.id,
+                  opponentName: player.username,
+                  opponentPhotoUrl: player.photoUrl,
+                  myName: supabaseService.userName,
+                  myPhotoUrl: supabaseService.userAvatar,
+                ),
+              ),
+            );
+            if (mounted) _loadUserData();
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Défi envoyé à ${player.username} !'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Affiche le popup de sélection de mise pour un duel
+  Future<int?> _showBetSelectionDialog() async {
+    final currentCandies = statsService.candies;
+    int selectedBet = 50.clamp(20, currentCandies);
+
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Options de mise
+            final betOptions = <int>[20, 50, 100];
+            // Ajouter "Tout miser" si > 100
+            if (currentCandies > 100) {
+              betOptions.add(currentCandies);
+            }
+            // Filtrer les options que le joueur peut se permettre
+            final affordableOptions = betOptions.where((b) => b <= currentCandies).toList();
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF2D1B69),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+              title: const Text(
+                'Choisis ta mise',
+                style: TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Solde actuel
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('🍬', style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$currentCandies bonbons',
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Boutons de mise
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
+                    children: affordableOptions.map((bet) {
+                      final isSelected = selectedBet == bet;
+                      final label = bet == currentCandies && bet > 100 ? 'TOUT' : '$bet';
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => selectedBet = bet),
+                        child: Container(
+                          width: 75,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isSelected
+                                  ? [const Color(0xFFFFD700), const Color(0xFFFFA500)]
+                                  : [const Color(0xFF4A148C), const Color(0xFF7C4DFF)],
+                            ),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: isSelected ? Colors.white : Colors.white38,
+                              width: isSelected ? 3 : 1.5,
+                            ),
+                            boxShadow: isSelected
+                                ? [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.4), blurRadius: 10)]
+                                : null,
+                          ),
+                          child: Column(
+                            children: [
+                              const Text('🍬', style: TextStyle(fontSize: 16)),
+                              const SizedBox(height: 2),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: isSelected ? 18 : 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, selectedBet),
+                        style: TextButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B9D),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                        child: Text(
+                          'MISER $selectedBet 🍬',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -326,12 +683,50 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
                         ],
                       ),
                     ),
-                    // Bouton paramètres
-                    CandyCircleButton(
-                      icon: Icons.settings,
-                      backgroundImage: 'assets/ui/cercleparametres.png',
-                      onTap: _openSettings,
-                      size: 55,
+                    // Bonbons + Paramètres
+                    Row(
+                      children: [
+                        // Solde bonbons
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFFFF6B9D).withOpacity(0.7),
+                                const Color(0xFFE91E63).withOpacity(0.7),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('🍬', style: TextStyle(fontSize: 16)),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${statsService.candies}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  shadows: [
+                                    Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 2),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Bouton paramètres
+                        CandyCircleButton(
+                          icon: Icons.settings,
+                          backgroundImage: 'assets/ui/cercleparametres.png',
+                          onTap: _openSettings,
+                          size: 55,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -387,6 +782,45 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
                               strokeWidth: 3,
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Bouton JOUER EN LIGNE
+                    GestureDetector(
+                      onTap: _playOnline,
+                      child: Container(
+                        width: screenWidth * 0.5,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF7C4DFF), Color(0xFF651FFF)],
+                          ),
+                          borderRadius: BorderRadius.circular(25),
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF651FFF).withOpacity(0.5),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.wifi, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            CandyText(
+                              text: 'EN LIGNE',
+                              fontSize: 20,
+                              textColor: Colors.white,
+                              strokeColor: Color(0xFF4A148C),
+                              strokeWidth: 2,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -569,6 +1003,256 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin, 
         asset,
         width: size,
         height: size,
+      ),
+    );
+  }
+}
+
+/// Popup qui affiche les joueurs en ligne
+class _OnlinePlayersDialog extends StatefulWidget {
+  final String playerId;
+  final Function(PlayerSummary) onChallenge;
+
+  const _OnlinePlayersDialog({
+    required this.playerId,
+    required this.onChallenge,
+  });
+
+  @override
+  State<_OnlinePlayersDialog> createState() => _OnlinePlayersDialogState();
+}
+
+class _OnlinePlayersDialogState extends State<_OnlinePlayersDialog> {
+  List<PlayerSummary>? _players;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOnlinePlayers();
+  }
+
+  Future<void> _loadOnlinePlayers() async {
+    final players = await friendService.getOnlinePlayers(widget.playerId);
+    if (mounted) {
+      setState(() {
+        _players = players;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF2A1B3D),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 450, maxWidth: 340),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Titre
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.wifi, color: Color(0xFF7C4DFF), size: 24),
+                SizedBox(width: 8),
+                CandyText(
+                  text: 'JOUEURS EN LIGNE',
+                  fontSize: 20,
+                  textColor: Colors.white,
+                  strokeColor: Color(0xFF7C4DFF),
+                  strokeWidth: 2,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Contenu
+            Flexible(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF7C4DFF),
+                      ),
+                    )
+                  : _players == null || _players!.isEmpty
+                      ? _buildEmptyState()
+                      : _buildPlayerList(),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Bouton fermer
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Fermer',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.wifi_off, color: Colors.white.withOpacity(0.3), size: 48),
+        const SizedBox(height: 12),
+        Text(
+          'Aucun joueur en ligne',
+          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Reviens plus tard ou défie un bot !',
+          style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayerList() {
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: _players!.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final player = _players![index];
+        return _buildPlayerTile(player);
+      },
+    );
+  }
+
+  Widget _buildPlayerTile(PlayerSummary player) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+      ),
+      child: Row(
+        children: [
+          // Avatar
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFFFD700),
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: ClipOval(
+              child: player.photoUrl != null
+                  ? Image.network(
+                      player.photoUrl!,
+                      fit: BoxFit.cover,
+                      width: 40,
+                      height: 40,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Text(
+                          player.username.isNotEmpty ? player.username[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Color(0xFF5D3A1A),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        player.username.isNotEmpty ? player.username[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Color(0xFF5D3A1A),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Nom + point vert
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    player.username,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.green,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.green.withOpacity(0.6),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Bouton DÉFIER
+          GestureDetector(
+            onTap: () => widget.onChallenge(player),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF6B9D), Color(0xFFE91E63)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFE91E63).withOpacity(0.5),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Text(
+                'DÉFIER',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
