@@ -45,7 +45,7 @@ Mode: Release (CRITIQUE - Debug crash sur iOS 14+)
 Build type: App Store / TestFlight
 Code Signing: Automatic
 API Key App Store Connect: KZBZXWQ5YW
-Dernier build TestFlight : 1.0.0+25 (Build 25)
+Dernier build TestFlight : 1.0.0+27 (Build 27)
 ```
 
 ---
