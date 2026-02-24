@@ -236,10 +236,9 @@
         <div class="section">
             <div class="section-title">Acces Infrastructure Complet</div>
             <div class="infra-box">
-                <p>Tous les acces serveur, Coolify, Supabase, GitHub — sans projet specifique.</p>
-                <div class="infra-url">
-                    <code>https://infra.swipego.app/api</code>
-                    <button onclick="copyInfra(this)">Copier</button>
+                <p>Tous les acces serveur, Coolify, Supabase, GitHub — centralises et securises derriere l'authentification.</p>
+                <div style="margin-top:16px">
+                    <a href="/infra.html" class="btn-small" style="background:#8957e5;color:#fff;padding:10px 20px;font-size:13px;border-radius:8px;text-decoration:none;display:inline-block">Voir les acces infrastructure</a>
                 </div>
             </div>
         </div>
@@ -261,12 +260,6 @@ function downloadS3Creds() {
     a.download = 'user-JjsBnnJNmB49.txt';
     a.click();
     URL.revokeObjectURL(a.href);
-}
-function copyInfra(btn) {
-    navigator.clipboard.writeText('https://infra.swipego.app/api');
-    btn.textContent = 'Copie !';
-    btn.style.background = '#238636';
-    setTimeout(function() { btn.textContent = 'Copier'; btn.style.background = ''; }, 2000);
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
