@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrastructure — SwipeGo Admin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .infra-section { margin-bottom: 32px; }
+        .infra-section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .infra-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 12px;
+        }
+        .infra-item {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .infra-label {
+            font-size: 12px;
+            color: #8b949e;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .infra-value {
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            color: #e6edf3;
+            word-break: break-all;
+        }
+        .infra-value.secret {
+            filter: blur(5px);
+            transition: filter 0.2s;
+            cursor: pointer;
+        }
+        .infra-value.secret.revealed { filter: none; }
+        .btn-copy {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .btn-copy:hover { background: #30363d; color: #e6edf3; }
+        .btn-copy.copied { background: #238636; color: #fff; border-color: #238636; }
+        .infra-warn {
+            background: #f8514922;
+            border: 1px solid #f8514944;
+            border-radius: 10px;
+            padding: 14px 18px;
+            font-size: 13px;
+            color: #f85149;
+            margin-bottom: 24px;
+        }
+        .projects-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .project-tag {
+            background: #1f6feb22;
+            color: #58a6ff;
+            border: 1px solid #58a6ff44;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="page-loading" id="page-loading"><span class="spinner"></span> Chargement...</div>
+
+<!-- Page content -->
+<div id="page-content" style="display:none">
+
+    <!-- Navbar -->
+    <nav class="navbar" id="navbar">
+        <a href="/" class="navbar-brand">Swipe<span>Go</span> Admin</a>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/users.html">Utilisateurs</a>
+            <a href="/infra.html">Infra</a>
+        </div>
+        <div class="navbar-user">
+            <span id="navbar-email"></span>
+            <button class="btn-logout" onclick="logout()">Deconnexion</button>
+        </div>
+    </nav>
+
+    <div class="container-wide">
+        <div class="infra-warn">
+            Ces informations sont sensibles. Ne les partagez jamais et ne les copiez que si necessaire.
+        </div>
+
+        <div id="infra-content">
+            <p style="color:#8b949e;text-align:center;padding:40px;">Chargement des donnees infrastructure...</p>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+var SECRETS = ['token_api', 'anon_key', 'service_role_key', 'dashboard_password', 'postgresql_password', 'password'];
+
+function isSecret(key) {
+    return SECRETS.indexOf(key) !== -1;
+}
+
+function copyToClipboard(text, btn) {
+    navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copie !';
+        btn.classList.add('copied');
+        setTimeout(function() {
+            btn.textContent = 'Copier';
+            btn.classList.remove('copied');
+        }, 1500);
+    });
+}
+
+function toggleSecret(el) {
+    el.classList.toggle('revealed');
+}
+
+function renderSection(title, icon, data) {
+    if (!data || typeof data !== 'object') return '';
+
+    if (Array.isArray(data)) {
+        var tags = data.map(function(p) { return '<span class="project-tag">' + p + '</span>'; }).join('');
+        return '<div class="infra-section">' +
+            '<div class="infra-section-title">' + icon + ' ' + title + '</div>' +
+            '<div class="projects-list">' + tags + '</div>' +
+            '</div>';
+    }
+
+    var items = Object.keys(data).map(function(key) {
+        var val = data[key];
+        var secret = isSecret(key);
+        var label = key.replace(/_/g, ' ');
+        return '<div class="infra-item">' +
+            '<div>' +
+                '<div class="infra-label">' + label + '</div>' +
+                '<div class="infra-value' + (secret ? ' secret' : '') + '" ' +
+                    (secret ? 'onclick="toggleSecret(this)"' : '') +
+                    ' data-value="' + val.replace(/"/g, '&quot;') + '">' + val + '</div>' +
+            '</div>' +
+            '<button class="btn-copy" onclick="copyToClipboard(\'' + val.replace(/'/g, "\\'") + '\', this)">Copier</button>' +
+            '</div>';
+    });
+
+    return '<div class="infra-section">' +
+        '<div class="infra-section-title">' + icon + ' ' + title + '</div>' +
+        '<div class="infra-grid">' + items.join('') + '</div>' +
+        '</div>';
+}
+
+async function loadInfra() {
+    var token = await getAccessToken();
+    var resp = await fetch('/api/infra', {
+        headers: { 'Authorization': 'Bearer ' + token }
+    });
+
+    if (!resp.ok) {
+        document.getElementById('infra-content').innerHTML =
+            '<p style="color:#f85149;text-align:center;padding:40px;">Erreur de chargement.</p>';
+        return;
+    }
+
+    var data = await resp.json();
+    var html = '';
+    html += renderSection('Serveur', '🖥', data.serveur);
+    html += renderSection('Coolify', '🚀', data.coolify);
+    html += renderSection('Supabase', '🗄', data.supabase);
+    html += renderSection('GitHub', '🐙', data.github);
+    html += renderSection('Code Server', '💻', data.code_server);
+    html += renderSection('Projets disponibles', '📦', data.projets_disponibles);
+
+    document.getElementById('infra-content').innerHTML = html;
+}
+
+(async function() {
+    try {
+        var session = await checkAuth();
+        if (!session) return;
+        renderNavbar('infra');
+        await setNavbarUser();
+        showPage();
+        await loadInfra();
+    } catch(e) {
+        console.error('Init error:', e);
+        window.location.href = '/login.html';
+    }
+})();
+</script>
+</body>
+</html>

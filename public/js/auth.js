@@ -54,6 +54,7 @@ function renderNavbar(activePage) {
             var href = a.getAttribute('href');
             if (href === '/' && activePage === 'dashboard') a.classList.add('active');
             else if (href === '/users.html' && activePage === 'users') a.classList.add('active');
+            else if (href === '/infra.html' && activePage === 'infra') a.classList.add('active');
             else a.classList.remove('active');
         });
     }
