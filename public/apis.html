@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cles API — SwipeGo Admin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .apis-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .apis-header h2 { font-size: 22px; }
+        .search-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 8px 14px;
+            color: #e6edf3;
+            font-size: 13px;
+            width: 280px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .search-box:focus { border-color: #58a6ff; }
+        .search-box::placeholder { color: #484f58; }
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 20px;
+        }
+        .filter-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 5px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover { background: #30363d; color: #e6edf3; }
+        .filter-btn.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+        .api-warn {
+            background: #f8514922;
+            border: 1px solid #f8514944;
+            border-radius: 10px;
+            padding: 14px 18px;
+            font-size: 13px;
+            color: #f85149;
+            margin-bottom: 24px;
+        }
+        .api-table { width: 100%; border-collapse: collapse; }
+        .api-table thead th {
+            text-align: left;
+            padding: 12px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #30363d;
+            background: #0d111788;
+            white-space: nowrap;
+        }
+        .api-table tbody td {
+            padding: 10px 14px;
+            font-size: 13px;
+            border-bottom: 1px solid #21262d;
+            vertical-align: middle;
+        }
+        .api-table tbody tr:last-child td { border-bottom: none; }
+        .api-table tbody tr:hover { background: #1a233222; }
+        .api-table tbody tr.hidden { display: none; }
+        .project-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #1f6feb22;
+            color: #58a6ff;
+            border: 1px solid #58a6ff44;
+            white-space: nowrap;
+        }
+        .service-name { font-weight: 600; color: #e6edf3; white-space: nowrap; }
+        .usage-text { color: #8b949e; font-size: 12px; }
+        .var-name {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 11px;
+            color: #d2a8ff;
+            background: #21262d;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .api-value {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 11px;
+            color: #3fb950;
+            word-break: break-all;
+            max-width: 260px;
+            display: inline-block;
+        }
+        .api-value.secret {
+            filter: blur(5px);
+            transition: filter 0.2s;
+            cursor: pointer;
+        }
+        .api-value.secret.revealed { filter: none; }
+        .api-value.placeholder { color: #6e7681; font-style: italic; }
+        .btn-copy-sm {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .btn-copy-sm:hover { background: #30363d; color: #e6edf3; }
+        .btn-copy-sm.copied { background: #238636; color: #fff; border-color: #238636; }
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 16px;
+            text-align: center;
+        }
+        .stat-number { font-size: 20px; font-weight: 700; color: #58a6ff; }
+        .stat-label { font-size: 11px; color: #8b949e; margin-top: 2px; }
+    </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="page-loading" id="page-loading"><span class="spinner"></span> Chargement...</div>
+
+<!-- Page content -->
+<div id="page-content" style="display:none">
+
+    <!-- Navbar -->
+    <nav class="navbar" id="navbar">
+        <a href="/" class="navbar-brand">Swipe<span>Go</span> Admin</a>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/users.html">Utilisateurs</a>
+            <a href="/apis.html">APIs</a>
+            <a href="/infra.html">Infra</a>
+        </div>
+        <div class="navbar-user">
+            <span id="navbar-email"></span>
+            <button class="btn-logout" onclick="logout()">Deconnexion</button>
+        </div>
+    </nav>
+
+    <div class="container-wide">
+        <div class="api-warn">
+            Ces cles API sont sensibles. Ne les partagez jamais. Les valeurs sont masquees par defaut — cliquez pour reveler.
+        </div>
+
+        <div class="apis-header">
+            <h2>Cles API — Tous les projets</h2>
+            <input type="text" class="search-box" id="search-input" placeholder="Rechercher projet, service, variable...">
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-bar" id="stats-bar"></div>
+
+        <!-- Filters -->
+        <div class="filter-bar" id="filter-bar"></div>
+
+        <!-- Table -->
+        <div class="table-wrapper">
+            <table class="api-table">
+                <thead>
+                    <tr>
+                        <th>Projet</th>
+                        <th>Service</th>
+                        <th>Usage</th>
+                        <th>Variable</th>
+                        <th>Cle / Valeur</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="apis-tbody">
+                    <tr><td colspan="6" style="text-align:center;color:#8b949e;padding:40px;">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+var allApis = [];
+var activeFilter = 'all';
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function copyValue(text, btn) {
+    navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copie !';
+        btn.classList.add('copied');
+        setTimeout(function() {
+            btn.textContent = 'Copier';
+            btn.classList.remove('copied');
+        }, 1500);
+    });
+}
+
+function toggleSecret(el) {
+    el.classList.toggle('revealed');
+}
+
+function renderTable(apis) {
+    var tbody = document.getElementById('apis-tbody');
+    if (!apis.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8b949e;padding:40px;">Aucun resultat</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = apis.map(function(api) {
+        var isPlaceholder = api.value.startsWith('(');
+        var isSecret = api.secret && !isPlaceholder;
+        var valueClass = 'api-value' + (isSecret ? ' secret' : '') + (isPlaceholder ? ' placeholder' : '');
+        var valueClick = isSecret ? ' onclick="toggleSecret(this)"' : '';
+        var safeVal = escapeHtml(api.value);
+        // Escape single quotes for the copy function
+        var copyVal = api.value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+        return '<tr data-project="' + escapeHtml(api.project) + '">' +
+            '<td><span class="project-badge">' + escapeHtml(api.project) + '</span></td>' +
+            '<td><span class="service-name">' + escapeHtml(api.service) + '</span></td>' +
+            '<td><span class="usage-text">' + escapeHtml(api.usage) + '</span></td>' +
+            '<td><span class="var-name">' + escapeHtml(api.variable) + '</span></td>' +
+            '<td><span class="' + valueClass + '"' + valueClick + '>' + safeVal + '</span></td>' +
+            '<td>' + (isPlaceholder ? '' : '<button class="btn-copy-sm" onclick="copyValue(\'' + copyVal + '\', this)">Copier</button>') + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function getUniqueProjects(apis) {
+    var seen = {};
+    return apis.reduce(function(arr, a) {
+        if (!seen[a.project]) { seen[a.project] = true; arr.push(a.project); }
+        return arr;
+    }, []);
+}
+
+function getUniqueServices(apis) {
+    var seen = {};
+    return apis.reduce(function(arr, a) {
+        if (!seen[a.service]) { seen[a.service] = true; arr.push(a.service); }
+        return arr;
+    }, []);
+}
+
+function applyFilters() {
+    var search = document.getElementById('search-input').value.toLowerCase();
+    var filtered = allApis.filter(function(api) {
+        // Project filter
+        if (activeFilter !== 'all' && api.project !== activeFilter) return false;
+        // Search filter
+        if (search) {
+            var haystack = (api.project + ' ' + api.service + ' ' + api.usage + ' ' + api.variable).toLowerCase();
+            return haystack.indexOf(search) !== -1;
+        }
+        return true;
+    });
+    renderTable(filtered);
+}
+
+function renderFilters(apis) {
+    var projects = getUniqueProjects(apis);
+    var bar = document.getElementById('filter-bar');
+    var btns = '<button class="filter-btn active" onclick="setFilter(\'all\', this)">Tous</button>';
+    projects.forEach(function(p) {
+        btns += '<button class="filter-btn" onclick="setFilter(\'' + escapeHtml(p) + '\', this)">' + escapeHtml(p) + '</button>';
+    });
+    bar.innerHTML = btns;
+}
+
+function setFilter(project, btn) {
+    activeFilter = project;
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    applyFilters();
+}
+
+function renderStats(apis) {
+    var projects = getUniqueProjects(apis);
+    var services = getUniqueServices(apis);
+    var secrets = apis.filter(function(a) { return a.secret; }).length;
+    var configured = apis.filter(function(a) { return !a.value.startsWith('('); }).length;
+
+    document.getElementById('stats-bar').innerHTML =
+        '<div class="stat-item"><div class="stat-number">' + projects.length + '</div><div class="stat-label">Projets</div></div>' +
+        '<div class="stat-item"><div class="stat-number">' + services.length + '</div><div class="stat-label">Services</div></div>' +
+        '<div class="stat-item"><div class="stat-number">' + apis.length + '</div><div class="stat-label">Cles total</div></div>' +
+        '<div class="stat-item"><div class="stat-number">' + configured + '/' + apis.length + '</div><div class="stat-label">Configurees</div></div>';
+}
+
+async function loadApis() {
+    var token = await getAccessToken();
+    var resp = await fetch('/api/apis', {
+        headers: { 'Authorization': 'Bearer ' + token }
+    });
+
+    if (!resp.ok) {
+        document.getElementById('apis-tbody').innerHTML =
+            '<tr><td colspan="6" style="color:#f85149;text-align:center;padding:40px;">Erreur de chargement.</td></tr>';
+        return;
+    }
+
+    var data = await resp.json();
+    allApis = data.apis || [];
+    renderStats(allApis);
+    renderFilters(allApis);
+    renderTable(allApis);
+}
+
+// Search handler
+document.getElementById('search-input').addEventListener('input', applyFilters);
+
+(async function() {
+    try {
+        var session = await checkAuth();
+        if (!session) return;
+        renderNavbar('apis');
+        await setNavbarUser();
+        showPage();
+        await loadApis();
+    } catch(e) {
+        console.error('Init error:', e);
+        window.location.href = '/login.html';
+    }
+})();
+</script>
+</body>
+</html>

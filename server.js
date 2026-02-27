@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -148,6 +149,22 @@ app.get('/api/infra', requireAuth, (req, res) => {
       'upload', 'optitourbooth', 'belotte', 'alice', 'admin', 'lcbconnect'
     ]
   });
+});
+
+// --- API Keys Registry (protected) ---
+// Data loaded from data/apis.json (gitignored — secrets stay off GitHub)
+app.get('/api/apis', requireAuth, (req, res) => {
+  try {
+    const apisPath = path.join(__dirname, 'data', 'apis.json');
+    if (!fs.existsSync(apisPath)) {
+      return res.json({ apis: [] });
+    }
+    const apis = JSON.parse(fs.readFileSync(apisPath, 'utf-8'));
+    res.json({ apis });
+  } catch (err) {
+    console.error('Error reading apis.json:', err);
+    res.status(500).json({ error: 'Erreur de lecture du fichier apis.json' });
+  }
 });
 
 // --- Serve static files ---
