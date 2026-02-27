@@ -152,18 +152,20 @@ app.get('/api/infra', requireAuth, (req, res) => {
 });
 
 // --- API Keys Registry (protected) ---
-// Data loaded from data/apis.json (gitignored — secrets stay off GitHub)
+// Priority: data/apis.json (local/volume) > APIS_DATA env var (base64) > empty
 app.get('/api/apis', requireAuth, (req, res) => {
   try {
     const apisPath = path.join(__dirname, 'data', 'apis.json');
-    if (!fs.existsSync(apisPath)) {
-      return res.json({ apis: [] });
+    let apis = [];
+    if (fs.existsSync(apisPath)) {
+      apis = JSON.parse(fs.readFileSync(apisPath, 'utf-8'));
+    } else if (process.env.APIS_DATA) {
+      apis = JSON.parse(Buffer.from(process.env.APIS_DATA, 'base64').toString('utf-8'));
     }
-    const apis = JSON.parse(fs.readFileSync(apisPath, 'utf-8'));
     res.json({ apis });
   } catch (err) {
-    console.error('Error reading apis.json:', err);
-    res.status(500).json({ error: 'Erreur de lecture du fichier apis.json' });
+    console.error('Error reading apis data:', err);
+    res.status(500).json({ error: 'Erreur de lecture des donnees APIs' });
   }
 });
 
