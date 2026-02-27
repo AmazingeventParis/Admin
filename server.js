@@ -145,7 +145,7 @@ app.get('/api/infra', requireAuth, (req, res) => {
     },
     projets_disponibles: [
       'kooki', 'cryptosignals', 'freqtrade', 'focusracer',
-      'upload', 'optitourbooth', 'belotte', 'alice', 'admin'
+      'upload', 'optitourbooth', 'belotte', 'alice', 'admin', 'lcbconnect'
     ]
   });
 });
