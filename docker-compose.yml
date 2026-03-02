@@ -6,6 +6,12 @@ services:
     volumes:
       - admin-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
 
 volumes:
   admin-data:
