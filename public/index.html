@@ -412,9 +412,9 @@ async function startStatsStream() {
     statsSource.onmessage = function(e) {
         try {
             var data = JSON.parse(e.data);
-            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%', data.cpu.percent + '%');
-            updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB', data.ram.percent + '%');
-            updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB', data.disk.percent + '%');
+            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%', '');
+            updateGauge('ram', data.ram.percent, data.ram.used_gb + '/' + data.ram.total_gb + 'G', data.ram.percent + '%');
+            updateGauge('disk', data.disk.percent, data.disk.used_gb + '/' + data.disk.total_gb + 'G', data.disk.percent + '%');
 
             var now = new Date();
             var timeEl = document.getElementById('mon-time');
