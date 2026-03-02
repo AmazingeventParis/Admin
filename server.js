@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const { execSync } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -200,6 +201,95 @@ function readDisk() {
   return { total_gb: 0, used_gb: 0, percent: 0 };
 }
 
+// --- Docker Container Monitoring ---
+let dockerAvailable = false;
+let containerStatsCache = [];
+let dockerDiskCache = { volumes: [], imagesMB: 0 };
+
+function dockerGet(urlPath) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { socketPath: '/var/run/docker.sock', path: urlPath, method: 'GET' },
+      (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
+function containerName(c) {
+  const labels = c.Labels || {};
+  if (labels['coolify.name']) return labels['coolify.name'];
+  if (labels['com.docker.compose.service']) return labels['com.docker.compose.service'];
+  const img = (c.Image || '').split('/').pop().split(':')[0].split('@')[0];
+  if (img) return img;
+  return (c.Names || ['/unknown'])[0].replace(/^\//, '');
+}
+
+function dockerCpuPercent(s) {
+  if (!s.cpu_stats?.cpu_usage || !s.precpu_stats?.cpu_usage) return 0;
+  const cd = s.cpu_stats.cpu_usage.total_usage - s.precpu_stats.cpu_usage.total_usage;
+  const sd = (s.cpu_stats.system_cpu_usage || 0) - (s.precpu_stats.system_cpu_usage || 0);
+  const n = s.cpu_stats.online_cpus || 1;
+  return sd > 0 ? Math.round(cd / sd * n * 1000) / 10 : 0;
+}
+
+function dockerMemMB(s) {
+  if (!s.memory_stats) return 0;
+  const used = (s.memory_stats.usage || 0) - (s.memory_stats.stats?.inactive_file || 0);
+  return Math.round(used / 1024 / 1024 * 10) / 10;
+}
+
+async function collectDockerStats() {
+  try {
+    const list = await dockerGet('/containers/json');
+    if (!Array.isArray(list)) return;
+    const results = await Promise.allSettled(list.map(async (c) => {
+      const s = await dockerGet('/containers/' + c.Id + '/stats?stream=false');
+      return { name: containerName(c), cpu: dockerCpuPercent(s), memMB: dockerMemMB(s) };
+    }));
+    containerStatsCache = results
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value);
+  } catch (e) {
+    console.error('Docker stats collection error:', e.message);
+  }
+}
+
+async function collectDockerDisk() {
+  try {
+    const df = await dockerGet('/system/df');
+    const vols = (df.Volumes || [])
+      .map(v => ({ name: v.Name, mb: Math.round((v.UsageData?.Size || 0) / 1024 / 1024) }))
+      .filter(v => v.mb > 0)
+      .sort((a, b) => b.mb - a.mb);
+    const imgMB = Math.round((df.Images || []).reduce((s, i) => s + (i.Size || 0), 0) / 1024 / 1024);
+    dockerDiskCache = { volumes: vols, imagesMB: imgMB };
+  } catch (e) {
+    console.error('Docker disk collection error:', e.message);
+  }
+}
+
+(function initDockerMonitoring() {
+  if (!fs.existsSync('/var/run/docker.sock')) {
+    console.log('Docker socket not found — container monitoring disabled');
+    return;
+  }
+  dockerAvailable = true;
+  console.log('Docker monitoring enabled');
+  collectDockerStats();
+  collectDockerDisk();
+  setInterval(collectDockerStats, 5000);
+  setInterval(collectDockerDisk, 60000);
+})();
+
 // --- Server Stats SSE stream (real-time) ---
 // EventSource can't set headers, so accept token as query param too
 app.get('/api/server-stats/stream', async (req, res, next) => {
@@ -233,7 +323,14 @@ app.get('/api/server-stats/stream', async (req, res, next) => {
       // Disk changes slowly — refresh every 30 ticks (~30s)
       if (diskTick++ % 30 === 0) diskCache = readDisk();
 
-      const data = { cpu: { percent: cpuPercent }, ram: readRam(), disk: diskCache, timestamp: Date.now() };
+      const data = {
+        cpu: { percent: cpuPercent },
+        ram: readRam(),
+        disk: diskCache,
+        containers: dockerAvailable ? containerStatsCache : null,
+        dockerDisk: dockerAvailable ? dockerDiskCache : null,
+        timestamp: Date.now()
+      };
       res.write('data: ' + JSON.stringify(data) + '\n\n');
     } catch (e) {
       console.error('SSE stats error:', e.message);
@@ -252,7 +349,14 @@ app.get('/api/server-stats', requireAuth, async (req, res) => {
     const idleDelta = s2.idle - s1.idle;
     const totalDelta = s2.total - s1.total;
     const cpuPercent = totalDelta > 0 ? Math.round((1 - idleDelta / totalDelta) * 100) : 0;
-    res.json({ cpu: { percent: cpuPercent }, ram: readRam(), disk: readDisk(), timestamp: Date.now() });
+    res.json({
+      cpu: { percent: cpuPercent },
+      ram: readRam(),
+      disk: readDisk(),
+      containers: dockerAvailable ? containerStatsCache : null,
+      dockerDisk: dockerAvailable ? dockerDiskCache : null,
+      timestamp: Date.now()
+    });
   } catch (err) {
     res.status(500).json({ error: 'Erreur lecture stats serveur' });
   }

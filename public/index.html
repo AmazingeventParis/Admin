@@ -49,18 +49,21 @@
                     <div class="monitor-value" id="mon-cpu-val">--</div>
                     <div class="monitor-bar"><div class="monitor-fill" id="mon-cpu-fill" style="width:0%"></div></div>
                     <div class="monitor-detail" id="mon-cpu-detail">Chargement...</div>
+                    <div class="monitor-breakdown" id="mon-cpu-breakdown"></div>
                 </div>
                 <div class="monitor-card" id="mon-ram">
                     <div class="monitor-label">RAM</div>
                     <div class="monitor-value" id="mon-ram-val">--</div>
                     <div class="monitor-bar"><div class="monitor-fill" id="mon-ram-fill" style="width:0%"></div></div>
                     <div class="monitor-detail" id="mon-ram-detail">Chargement...</div>
+                    <div class="monitor-breakdown" id="mon-ram-breakdown"></div>
                 </div>
                 <div class="monitor-card" id="mon-disk">
                     <div class="monitor-label">Disque</div>
                     <div class="monitor-value" id="mon-disk-val">--</div>
                     <div class="monitor-bar"><div class="monitor-fill" id="mon-disk-fill" style="width:0%"></div></div>
                     <div class="monitor-detail" id="mon-disk-detail">Chargement...</div>
+                    <div class="monitor-breakdown" id="mon-disk-breakdown"></div>
                 </div>
             </div>
         </div>
@@ -122,6 +125,54 @@
                 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 #23863688; }
                 50% { opacity: 0.6; box-shadow: 0 0 0 4px #23863600; }
             }
+            .monitor-breakdown {
+                margin-top: 8px;
+                border-top: 1px solid #21262d;
+                padding-top: 6px;
+                max-height: 200px;
+                overflow-y: auto;
+            }
+            .monitor-breakdown:empty {
+                display: none;
+            }
+            .breakdown-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 2px 0;
+                font-size: 10px;
+            }
+            .breakdown-name {
+                width: 80px;
+                color: #8b949e;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                flex-shrink: 0;
+                text-align: left;
+            }
+            .breakdown-bar-wrap {
+                flex: 1;
+                height: 3px;
+                background: #21262d;
+                border-radius: 2px;
+                overflow: hidden;
+                min-width: 16px;
+            }
+            .breakdown-bar-inner {
+                height: 100%;
+                background: #58a6ff;
+                border-radius: 2px;
+                transition: width 0.8s ease;
+            }
+            .breakdown-val {
+                width: 52px;
+                text-align: right;
+                color: #c9d1d9;
+                font-family: 'SF Mono', 'Fira Code', monospace;
+                flex-shrink: 0;
+            }
+            .breakdown-other .breakdown-name { color: #6e7681; font-style: italic; }
         </style>
 
         <!-- Apps -->
@@ -417,6 +468,36 @@ async function startStatsStream() {
             updateGauge('ram', data.ram.percent, data.ram.used_gb + '/' + data.ram.total_gb + 'G', data.ram.percent + '%');
             updateGauge('disk', data.disk.percent, data.disk.used_gb + '/' + data.disk.total_gb + 'G', data.disk.percent + '%');
 
+            // Per-container breakdowns
+            if (data.containers && data.containers.length > 0) {
+                var cpuItems = data.containers.slice()
+                    .sort(function(a,b){ return b.cpu - a.cpu; })
+                    .filter(function(c){ return c.cpu > 0.05; })
+                    .map(function(c){ return { name: c.name, val: c.cpu, display: c.cpu.toFixed(1) + '%' }; });
+                var cpuMax = cpuItems.length > 0 ? cpuItems[0].val : 1;
+                renderBreakdown('cpu', cpuItems, cpuMax);
+
+                var ramItems = data.containers.slice()
+                    .sort(function(a,b){ return b.memMB - a.memMB; })
+                    .filter(function(c){ return c.memMB > 1; })
+                    .map(function(c){ return { name: c.name, val: c.memMB, display: fmtMB(c.memMB) }; });
+                var ramMax = ramItems.length > 0 ? ramItems[0].val : 1;
+                renderBreakdown('ram', ramItems, ramMax);
+            }
+
+            // Docker disk breakdown
+            if (data.dockerDisk) {
+                var diskItems = [];
+                if (data.dockerDisk.imagesMB > 0)
+                    diskItems.push({ name: 'Images Docker', val: data.dockerDisk.imagesMB, display: fmtMB(data.dockerDisk.imagesMB) });
+                var vols = data.dockerDisk.volumes || [];
+                for (var v = 0; v < vols.length; v++)
+                    diskItems.push({ name: vols[v].name, val: vols[v].mb, display: fmtMB(vols[v].mb) });
+                diskItems.sort(function(a,b){ return b.val - a.val; });
+                var diskMax = diskItems.length > 0 ? diskItems[0].val : 1;
+                renderBreakdown('disk', diskItems, diskMax);
+            }
+
             var now = new Date();
             var timeEl = document.getElementById('mon-time');
             if (timeEl) timeEl.textContent = 'Live — ' + now.toLocaleTimeString('fr-FR');
@@ -429,6 +510,42 @@ async function startStatsStream() {
         statsSource.close();
         setTimeout(startStatsStream, 3000);
     };
+}
+
+function fmtMB(mb) {
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + ' G';
+    return Math.round(mb) + ' M';
+}
+
+function renderBreakdown(cardId, items, maxVal) {
+    var el = document.getElementById('mon-' + cardId + '-breakdown');
+    if (!el) return;
+    if (!items || items.length === 0) { el.innerHTML = ''; return; }
+
+    var MAX_SHOW = 6;
+    var shown = items.slice(0, MAX_SHOW);
+    var rest = items.slice(MAX_SHOW);
+
+    var html = '';
+    for (var i = 0; i < shown.length; i++) {
+        var pct = maxVal > 0 ? Math.min(shown[i].val / maxVal * 100, 100) : 0;
+        html += '<div class="breakdown-row">' +
+            '<span class="breakdown-name" title="' + shown[i].name + '">' + shown[i].name + '</span>' +
+            '<span class="breakdown-bar-wrap"><span class="breakdown-bar-inner" style="width:' + pct.toFixed(0) + '%"></span></span>' +
+            '<span class="breakdown-val">' + shown[i].display + '</span></div>';
+    }
+
+    if (rest.length > 0) {
+        var restVal = rest.reduce(function(s, r) { return s + r.val; }, 0);
+        var restPct = maxVal > 0 ? Math.min(restVal / maxVal * 100, 100) : 0;
+        var restDisplay = cardId === 'cpu' ? restVal.toFixed(1) + '%' : fmtMB(restVal);
+        html += '<div class="breakdown-row breakdown-other">' +
+            '<span class="breakdown-name">+' + rest.length + ' autres</span>' +
+            '<span class="breakdown-bar-wrap"><span class="breakdown-bar-inner" style="width:' + restPct.toFixed(0) + '%"></span></span>' +
+            '<span class="breakdown-val">' + restDisplay + '</span></div>';
+    }
+
+    el.innerHTML = html;
 }
 
 function updateGauge(id, percent, mainText, subText) {
