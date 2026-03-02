@@ -173,11 +173,28 @@ function readCpuSample() {
 
 function readDisk() {
   try {
-    const df = execSync('df / --output=size,used,pcent 2>/dev/null || df -k / 2>/dev/null', { encoding: 'utf-8' });
-    const parts = df.trim().split('\n').pop().trim().split(/\s+/);
-    if (parts.length >= 3) {
-      const totalKB = parseInt(parts[0]), usedKB = parseInt(parts[1]);
-      return { total_gb: Math.round(totalKB / 1024 / 1024 * 10) / 10, used_gb: Math.round(usedKB / 1024 / 1024 * 10) / 10, percent: parseInt(parts[2]) || 0 };
+    // List all physical partitions (/dev/*), pick the largest one
+    const df = execSync('df -k 2>/dev/null', { encoding: 'utf-8' });
+    const lines = df.trim().split('\n').slice(1);
+    let best = null;
+    for (const line of lines) {
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 5) continue;
+      // Only real devices (skip overlay, tmpfs, etc.)
+      if (cols[0].startsWith('/dev/')) {
+        const totalKB = parseInt(cols[1]);
+        const usedKB = parseInt(cols[2]);
+        if (!best || totalKB > best.totalKB) {
+          best = { totalKB, usedKB };
+        }
+      }
+    }
+    if (best) {
+      return {
+        total_gb: Math.round(best.totalKB / 1024 / 1024 * 10) / 10,
+        used_gb: Math.round(best.usedKB / 1024 / 1024 * 10) / 10,
+        percent: Math.round(best.usedKB / best.totalKB * 100)
+      };
     }
   } catch (e) {}
   return { total_gb: 0, used_gb: 0, percent: 0 };

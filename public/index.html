@@ -408,9 +408,9 @@ async function startStatsStream() {
     statsSource.onmessage = function(e) {
         try {
             var data = JSON.parse(e.data);
-            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%');
-            updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB');
-            updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB');
+            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%', data.cpu.percent + '%');
+            updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB', data.ram.percent + '%');
+            updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB', data.disk.percent + '%');
 
             var now = new Date();
             var timeEl = document.getElementById('mon-time');
@@ -426,16 +426,16 @@ async function startStatsStream() {
     };
 }
 
-function updateGauge(id, percent, detail) {
+function updateGauge(id, percent, mainText, subText) {
     var valEl = document.getElementById('mon-' + id + '-val');
     var fillEl = document.getElementById('mon-' + id + '-fill');
     var detailEl = document.getElementById('mon-' + id + '-detail');
     var cardEl = document.getElementById('mon-' + id);
     if (!valEl) return;
 
-    valEl.textContent = percent + '%';
+    valEl.textContent = mainText;
     fillEl.style.width = percent + '%';
-    detailEl.textContent = detail;
+    detailEl.textContent = subText;
 
     fillEl.classList.remove('warn', 'danger');
     cardEl.classList.remove('warn', 'danger');
