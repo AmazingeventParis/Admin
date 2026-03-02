@@ -34,6 +34,77 @@
         <h1 class="page-title">Swipe<span>Go</span> Admin</h1>
         <p class="page-subtitle">Tous les projets et outils — un seul endroit</p>
 
+        <!-- Server Monitoring -->
+        <div class="section">
+            <div class="section-title">Serveur — 217.182.89.133</div>
+            <div id="server-monitor" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
+                <div class="monitor-card" id="mon-cpu">
+                    <div class="monitor-label">CPU</div>
+                    <div class="monitor-value" id="mon-cpu-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon-cpu-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon-cpu-detail">Chargement...</div>
+                </div>
+                <div class="monitor-card" id="mon-ram">
+                    <div class="monitor-label">RAM</div>
+                    <div class="monitor-value" id="mon-ram-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon-ram-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon-ram-detail">Chargement...</div>
+                </div>
+                <div class="monitor-card" id="mon-disk">
+                    <div class="monitor-label">Disque</div>
+                    <div class="monitor-value" id="mon-disk-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon-disk-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon-disk-detail">Chargement...</div>
+                </div>
+            </div>
+        </div>
+        <style>
+            .monitor-card {
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 12px;
+                padding: 20px;
+                text-align: center;
+                transition: border-color 0.3s;
+            }
+            .monitor-label {
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: #8b949e;
+                margin-bottom: 8px;
+            }
+            .monitor-value {
+                font-size: 32px;
+                font-weight: 700;
+                color: #e6edf3;
+                margin-bottom: 12px;
+                font-family: 'SF Mono', 'Fira Code', monospace;
+            }
+            .monitor-bar {
+                height: 8px;
+                background: #21262d;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-bottom: 10px;
+            }
+            .monitor-fill {
+                height: 100%;
+                border-radius: 4px;
+                transition: width 0.8s ease, background-color 0.5s ease;
+                background: #238636;
+            }
+            .monitor-fill.warn { background: #d97706; }
+            .monitor-fill.danger { background: #f85149; }
+            .monitor-detail {
+                font-size: 12px;
+                color: #8b949e;
+            }
+            .monitor-card.warn { border-color: #d9770644; }
+            .monitor-card.danger { border-color: #f8514944; }
+        </style>
+
         <!-- Apps -->
         <div class="section">
             <div class="section-title">Applications</div>
@@ -309,6 +380,47 @@ function downloadS3Creds() {
     URL.revokeObjectURL(a.href);
 }
 </script>
+<script>
+var monitorInterval = null;
+async function loadServerStats() {
+    try {
+        var token = await getAccessToken();
+        var resp = await fetch('/api/server-stats', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var data = await resp.json();
+
+        updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%');
+        updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB');
+        updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB');
+    } catch (e) {
+        console.error('Stats error:', e);
+        document.getElementById('mon-cpu-detail').textContent = 'Erreur de chargement';
+    }
+}
+function updateGauge(id, percent, detail) {
+    var valEl = document.getElementById('mon-' + id + '-val');
+    var fillEl = document.getElementById('mon-' + id + '-fill');
+    var detailEl = document.getElementById('mon-' + id + '-detail');
+    var cardEl = document.getElementById('mon-' + id);
+    if (!valEl) return;
+
+    valEl.textContent = percent + '%';
+    fillEl.style.width = percent + '%';
+    detailEl.textContent = detail;
+
+    fillEl.classList.remove('warn', 'danger');
+    cardEl.classList.remove('warn', 'danger');
+    if (percent >= 85) {
+        fillEl.classList.add('danger');
+        cardEl.classList.add('danger');
+    } else if (percent >= 60) {
+        fillEl.classList.add('warn');
+        cardEl.classList.add('warn');
+    }
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script src="/js/auth.js"></script>
@@ -320,6 +432,8 @@ function downloadS3Creds() {
         renderNavbar('dashboard');
         await setNavbarUser();
         showPage();
+        loadServerStats();
+        monitorInterval = setInterval(loadServerStats, 30000);
     } catch(e) {
         console.error('Init error:', e);
         window.location.href = '/login.html';
