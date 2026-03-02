@@ -36,7 +36,13 @@
 
         <!-- Server Monitoring -->
         <div class="section">
-            <div class="section-title">Serveur — 217.182.89.133</div>
+            <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Serveur — 217.182.89.133</span>
+                <span id="mon-live" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;text-transform:none;letter-spacing:0">
+                    <span class="live-dot"></span>
+                    <span id="mon-time">--</span>
+                </span>
+            </div>
             <div id="server-monitor" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
                 <div class="monitor-card" id="mon-cpu">
                     <div class="monitor-label">CPU</div>
@@ -103,6 +109,17 @@
             }
             .monitor-card.warn { border-color: #d9770644; }
             .monitor-card.danger { border-color: #f8514944; }
+            .live-dot {
+                width: 8px; height: 8px;
+                background: #238636;
+                border-radius: 50%;
+                display: inline-block;
+                animation: livePulse 2s ease-in-out infinite;
+            }
+            @keyframes livePulse {
+                0%, 100% { opacity: 1; box-shadow: 0 0 0 0 #23863688; }
+                50% { opacity: 0.6; box-shadow: 0 0 0 4px #23863600; }
+            }
         </style>
 
         <!-- Apps -->
@@ -381,24 +398,34 @@ function downloadS3Creds() {
 }
 </script>
 <script>
-var monitorInterval = null;
-async function loadServerStats() {
-    try {
-        var token = await getAccessToken();
-        var resp = await fetch('/api/server-stats', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        var data = await resp.json();
+var statsSource = null;
 
-        updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%');
-        updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB');
-        updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB');
-    } catch (e) {
-        console.error('Stats error:', e);
-        document.getElementById('mon-cpu-detail').textContent = 'Erreur de chargement';
-    }
+async function startStatsStream() {
+    var token = await getAccessToken();
+    if (statsSource) statsSource.close();
+    statsSource = new EventSource('/api/server-stats/stream?token=' + encodeURIComponent(token));
+
+    statsSource.onmessage = function(e) {
+        try {
+            var data = JSON.parse(e.data);
+            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%');
+            updateGauge('ram', data.ram.percent, data.ram.used_gb + ' / ' + data.ram.total_gb + ' GB');
+            updateGauge('disk', data.disk.percent, data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB');
+
+            var now = new Date();
+            var timeEl = document.getElementById('mon-time');
+            if (timeEl) timeEl.textContent = 'Live — ' + now.toLocaleTimeString('fr-FR');
+        } catch (err) { console.error('SSE parse error:', err); }
+    };
+
+    statsSource.onerror = function() {
+        var timeEl = document.getElementById('mon-time');
+        if (timeEl) timeEl.textContent = 'Reconnexion...';
+        statsSource.close();
+        setTimeout(startStatsStream, 3000);
+    };
 }
+
 function updateGauge(id, percent, detail) {
     var valEl = document.getElementById('mon-' + id + '-val');
     var fillEl = document.getElementById('mon-' + id + '-fill');
@@ -432,8 +459,7 @@ function updateGauge(id, percent, detail) {
         renderNavbar('dashboard');
         await setNavbarUser();
         showPage();
-        loadServerStats();
-        monitorInterval = setInterval(loadServerStats, 30000);
+        startStatsStream();
     } catch(e) {
         console.error('Init error:', e);
         window.location.href = '/login.html';

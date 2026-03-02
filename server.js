@@ -152,71 +152,91 @@ app.get('/api/infra', requireAuth, (req, res) => {
   });
 });
 
-// --- Server Stats (protected) ---
+// --- Server Stats helpers ---
+function readRam() {
+  try {
+    const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
+    const memTotal = parseInt((meminfo.match(/MemTotal:\s+(\d+)/) || [])[1] || 0);
+    const memAvailable = parseInt((meminfo.match(/MemAvailable:\s+(\d+)/) || [])[1] || 0);
+    const totalGB = memTotal / 1024 / 1024;
+    const usedGB = (memTotal - memAvailable) / 1024 / 1024;
+    return { total_gb: Math.round(totalGB * 10) / 10, used_gb: Math.round(usedGB * 10) / 10, percent: Math.round((usedGB / totalGB) * 100) };
+  } catch (e) { return { total_gb: 0, used_gb: 0, percent: 0 }; }
+}
+
+function readCpuSample() {
+  const stat = fs.readFileSync('/proc/stat', 'utf-8');
+  const parts = stat.split('\n')[0].replace(/^cpu\s+/, '').split(/\s+/).map(Number);
+  const idle = parts[3] + (parts[4] || 0);
+  return { idle, total: parts.reduce((a, b) => a + b, 0) };
+}
+
+function readDisk() {
+  try {
+    const df = execSync('df / --output=size,used,pcent 2>/dev/null || df -k / 2>/dev/null', { encoding: 'utf-8' });
+    const parts = df.trim().split('\n').pop().trim().split(/\s+/);
+    if (parts.length >= 3) {
+      const totalKB = parseInt(parts[0]), usedKB = parseInt(parts[1]);
+      return { total_gb: Math.round(totalKB / 1024 / 1024 * 10) / 10, used_gb: Math.round(usedKB / 1024 / 1024 * 10) / 10, percent: parseInt(parts[2]) || 0 };
+    }
+  } catch (e) {}
+  return { total_gb: 0, used_gb: 0, percent: 0 };
+}
+
+// --- Server Stats SSE stream (real-time) ---
+// EventSource can't set headers, so accept token as query param too
+app.get('/api/server-stats/stream', async (req, res, next) => {
+  const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Token manquant' });
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Token invalide' });
+  req.user = user;
+  next();
+}, (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.write(':\n\n');
+
+  let prevCpu = readCpuSample();
+  let diskCache = readDisk();
+  let diskTick = 0;
+
+  const interval = setInterval(() => {
+    try {
+      const curCpu = readCpuSample();
+      const idleDelta = curCpu.idle - prevCpu.idle;
+      const totalDelta = curCpu.total - prevCpu.total;
+      const cpuPercent = totalDelta > 0 ? Math.round((1 - idleDelta / totalDelta) * 100) : 0;
+      prevCpu = curCpu;
+
+      // Disk changes slowly — refresh every 30 ticks (~30s)
+      if (diskTick++ % 30 === 0) diskCache = readDisk();
+
+      const data = { cpu: { percent: cpuPercent }, ram: readRam(), disk: diskCache, timestamp: Date.now() };
+      res.write('data: ' + JSON.stringify(data) + '\n\n');
+    } catch (e) {
+      console.error('SSE stats error:', e.message);
+    }
+  }, 1000);
+
+  req.on('close', () => clearInterval(interval));
+});
+
+// --- Server Stats (single request fallback) ---
 app.get('/api/server-stats', requireAuth, async (req, res) => {
   try {
-    // RAM from /proc/meminfo
-    let ram = { total_gb: 0, used_gb: 0, percent: 0 };
-    try {
-      const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
-      const memTotal = parseInt((meminfo.match(/MemTotal:\s+(\d+)/) || [])[1] || 0);
-      const memAvailable = parseInt((meminfo.match(/MemAvailable:\s+(\d+)/) || [])[1] || 0);
-      const totalGB = memTotal / 1024 / 1024;
-      const usedGB = (memTotal - memAvailable) / 1024 / 1024;
-      ram = {
-        total_gb: Math.round(totalGB * 10) / 10,
-        used_gb: Math.round(usedGB * 10) / 10,
-        percent: Math.round((usedGB / totalGB) * 100)
-      };
-    } catch (e) { console.error('RAM read error:', e.message); }
-
-    // CPU from /proc/stat (two samples 200ms apart)
-    let cpu = { percent: 0 };
-    try {
-      function readCpuStat() {
-        const stat = fs.readFileSync('/proc/stat', 'utf-8');
-        const line = stat.split('\n')[0];
-        const parts = line.replace(/^cpu\s+/, '').split(/\s+/).map(Number);
-        const idle = parts[3] + (parts[4] || 0);
-        const total = parts.reduce((a, b) => a + b, 0);
-        return { idle, total };
-      }
-      const s1 = readCpuStat();
-      await new Promise(r => setTimeout(r, 200));
-      const s2 = readCpuStat();
-      const idleDelta = s2.idle - s1.idle;
-      const totalDelta = s2.total - s1.total;
-      cpu.percent = totalDelta > 0 ? Math.round((1 - idleDelta / totalDelta) * 100) : 0;
-    } catch (e) { console.error('CPU read error:', e.message); }
-
-    // Disk from df
-    let disk = { total_gb: 0, used_gb: 0, percent: 0 };
-    try {
-      const df = execSync('df / --output=size,used,pcent 2>/dev/null || df -k / 2>/dev/null', { encoding: 'utf-8' });
-      const lines = df.trim().split('\n');
-      const dataLine = lines[lines.length - 1].trim().split(/\s+/);
-      if (dataLine.length >= 3) {
-        const totalKB = parseInt(dataLine[0]);
-        const usedKB = parseInt(dataLine[1]);
-        disk = {
-          total_gb: Math.round(totalKB / 1024 / 1024 * 10) / 10,
-          used_gb: Math.round(usedKB / 1024 / 1024 * 10) / 10,
-          percent: parseInt(dataLine[2]) || (totalKB > 0 ? Math.round(usedKB / totalKB * 100) : 0)
-        };
-      }
-    } catch (e) { console.error('Disk read error:', e.message); }
-
-    // Docker container count
-    let containers = 0;
-    try {
-      const out = execSync('cat /proc/1/cgroup 2>/dev/null | head -1', { encoding: 'utf-8' });
-      // We're in a container, try to count via /proc
-      containers = -1; // unknown from inside container
-    } catch (e) { containers = -1; }
-
-    res.json({ cpu, ram, disk, containers, timestamp: Date.now() });
+    const s1 = readCpuSample();
+    await new Promise(r => setTimeout(r, 200));
+    const s2 = readCpuSample();
+    const idleDelta = s2.idle - s1.idle;
+    const totalDelta = s2.total - s1.total;
+    const cpuPercent = totalDelta > 0 ? Math.round((1 - idleDelta / totalDelta) * 100) : 0;
+    res.json({ cpu: { percent: cpuPercent }, ram: readRam(), disk: readDisk(), timestamp: Date.now() });
   } catch (err) {
-    console.error('Server stats error:', err);
     res.status(500).json({ error: 'Erreur lecture stats serveur' });
   }
 });
