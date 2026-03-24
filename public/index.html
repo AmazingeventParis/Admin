@@ -67,6 +67,38 @@
                 </div>
             </div>
         </div>
+
+        <!-- Server 2 Monitoring (Shootnbox) -->
+        <div class="section" style="margin-top:8px">
+            <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Serveur — 79.137.88.192 (Shootnbox)</span>
+                <span id="mon2-live" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;text-transform:none;letter-spacing:0">
+                    <span class="live-dot"></span>
+                    <span id="mon2-time">--</span>
+                </span>
+            </div>
+            <div id="server-monitor-2" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+                <div class="monitor-card" id="mon2-cpu">
+                    <div class="monitor-label">CPU</div>
+                    <div class="monitor-value" id="mon2-cpu-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon2-cpu-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon2-cpu-detail">Chargement...</div>
+                </div>
+                <div class="monitor-card" id="mon2-ram">
+                    <div class="monitor-label">RAM</div>
+                    <div class="monitor-value" id="mon2-ram-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon2-ram-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon2-ram-detail">Chargement...</div>
+                </div>
+                <div class="monitor-card" id="mon2-disk">
+                    <div class="monitor-label">Disque</div>
+                    <div class="monitor-value" id="mon2-disk-val">--</div>
+                    <div class="monitor-bar"><div class="monitor-fill" id="mon2-disk-fill" style="width:0%"></div></div>
+                    <div class="monitor-detail" id="mon2-disk-detail">Chargement...</div>
+                </div>
+            </div>
+        </div>
+
         <style>
             .monitor-card {
                 background: #161b22;
@@ -564,11 +596,12 @@ function renderBreakdown(cardId, items, maxVal) {
     el.innerHTML = html;
 }
 
-function updateGauge(id, percent, mainText, subText) {
-    var valEl = document.getElementById('mon-' + id + '-val');
-    var fillEl = document.getElementById('mon-' + id + '-fill');
-    var detailEl = document.getElementById('mon-' + id + '-detail');
-    var cardEl = document.getElementById('mon-' + id);
+function updateGauge(id, percent, mainText, subText, prefix) {
+    var p = prefix || 'mon';
+    var valEl = document.getElementById(p + '-' + id + '-val');
+    var fillEl = document.getElementById(p + '-' + id + '-fill');
+    var detailEl = document.getElementById(p + '-' + id + '-detail');
+    var cardEl = document.getElementById(p + '-' + id);
     if (!valEl) return;
 
     valEl.textContent = mainText;
@@ -585,6 +618,35 @@ function updateGauge(id, percent, mainText, subText) {
         cardEl.classList.add('warn');
     }
 }
+
+// Remote server (Shootnbox) stats stream
+var statsSource2 = null;
+
+async function startRemoteStatsStream() {
+    var token = await getAccessToken();
+    if (statsSource2) statsSource2.close();
+    statsSource2 = new EventSource('/api/server-stats-remote/stream?token=' + encodeURIComponent(token));
+
+    statsSource2.onmessage = function(e) {
+        try {
+            var data = JSON.parse(e.data);
+            updateGauge('cpu', data.cpu.percent, data.cpu.percent + '%', '', 'mon2');
+            updateGauge('ram', data.ram.percent, data.ram.used_gb + '/' + data.ram.total_gb + 'G', data.ram.percent + '%', 'mon2');
+            updateGauge('disk', data.disk.percent, data.disk.used_gb + '/' + data.disk.total_gb + 'G', data.disk.percent + '%', 'mon2');
+
+            var now = new Date();
+            var timeEl = document.getElementById('mon2-time');
+            if (timeEl) timeEl.textContent = 'Live — ' + now.toLocaleTimeString('fr-FR');
+        } catch (err) { console.error('SSE2 parse error:', err); }
+    };
+
+    statsSource2.onerror = function() {
+        var timeEl = document.getElementById('mon2-time');
+        if (timeEl) timeEl.textContent = 'Reconnexion...';
+        statsSource2.close();
+        setTimeout(startRemoteStatsStream, 5000);
+    };
+}
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
@@ -598,6 +660,7 @@ function updateGauge(id, percent, mainText, subText) {
         await setNavbarUser();
         showPage();
         startStatsStream();
+        startRemoteStatsStream();
     } catch(e) {
         console.error('Init error:', e);
         window.location.href = '/login.html';

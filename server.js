@@ -290,6 +290,53 @@ async function collectDockerDisk() {
   setInterval(collectDockerDisk, 60000);
 })();
 
+// --- Remote Server Stats (Shootnbox 79.137.88.192 via monitor agent) ---
+const SHOOTNBOX_MONITOR_URL = 'http://79.137.88.192:3333/stats?secret=swipego-monitor-2026';
+
+async function readRemoteStats() {
+  try {
+    const resp = await fetch(SHOOTNBOX_MONITOR_URL);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    console.error('Remote stats error:', e.message);
+    return null;
+  }
+}
+
+// SSE stream for remote server (Shootnbox)
+app.get('/api/server-stats-remote/stream', async (req, res, next) => {
+  const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Token manquant' });
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Token invalide' });
+  req.user = user;
+  next();
+}, (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.write(':\n\n');
+
+  const sendStats = async () => {
+    try {
+      const stats = await readRemoteStats();
+      if (stats) {
+        res.write('data: ' + JSON.stringify({ ...stats, timestamp: Date.now() }) + '\n\n');
+      }
+    } catch (e) {
+      console.error('Remote SSE error:', e.message);
+    }
+  };
+
+  sendStats();
+  const interval = setInterval(sendStats, 5000);
+  req.on('close', () => clearInterval(interval));
+});
+
 // --- Server Stats SSE stream (real-time) ---
 // EventSource can't set headers, so accept token as query param too
 app.get('/api/server-stats/stream', async (req, res, next) => {
