@@ -206,6 +206,10 @@ let dockerAvailable = false;
 let containerStatsCache = [];
 let dockerDiskCache = { volumes: [], imagesMB: 0 };
 
+// Coolify API fallback config
+const COOLIFY_API = process.env.COOLIFY_API || 'http://coolify:8000';
+const COOLIFY_TOKEN = process.env.COOLIFY_TOKEN || '1|FNcssp3CipkrPNVSQyv3IboYwGsP8sjPskoBG3ux98e5a576';
+
 function dockerGet(urlPath) {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -263,6 +267,54 @@ async function collectDockerStats() {
   }
 }
 
+// Fallback: collect stats via Coolify execute API (runs docker stats on host)
+async function collectDockerStatsViaCoolify() {
+  try {
+    const SERVER_UUID = 's0cw4wsowg8wkok4wkwsko44';
+    const resp = await fetch(`${COOLIFY_API}/api/v1/servers/${SERVER_UUID}/commands`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${COOLIFY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        command: "docker stats --no-stream --format '{{.Name}}\\t{{.MemUsage}}\\t{{.CPUPerc}}'"
+      }),
+    });
+    if (!resp.ok) throw new Error(`Coolify API ${resp.status}`);
+    const data = await resp.json();
+    const output = data.result || data.output || '';
+    if (!output) return;
+
+    const lines = output.trim().split('\n').filter(l => l.trim());
+    containerStatsCache = lines.map(line => {
+      const parts = line.split('\t');
+      const name = (parts[0] || '').trim();
+      const memStr = (parts[1] || '').trim();
+      const cpuStr = (parts[2] || '').trim();
+
+      // Parse mem: "1.2GiB / 62.4GiB" or "256MiB / 62.4GiB"
+      let memMB = 0;
+      const memMatch = memStr.match(/([\d.]+)(MiB|GiB|KiB)/);
+      if (memMatch) {
+        memMB = parseFloat(memMatch[1]);
+        if (memMatch[2] === 'GiB') memMB *= 1024;
+        if (memMatch[2] === 'KiB') memMB /= 1024;
+      }
+
+      // Parse cpu: "1.23%"
+      const cpu = parseFloat(cpuStr) || 0;
+
+      return { name, cpu: Math.round(cpu * 10) / 10, memMB: Math.round(memMB * 10) / 10 };
+    }).filter(c => c.name);
+  } catch (e) {
+    // Silently fail - will retry next interval
+    if (containerStatsCache.length === 0) {
+      console.log('Coolify stats fallback unavailable:', e.message);
+    }
+  }
+}
+
 async function collectDockerDisk() {
   try {
     const df = await dockerGet('/system/df');
@@ -278,16 +330,20 @@ async function collectDockerDisk() {
 }
 
 (function initDockerMonitoring() {
-  if (!fs.existsSync('/var/run/docker.sock')) {
-    console.log('Docker socket not found — container monitoring disabled');
-    return;
+  if (fs.existsSync('/var/run/docker.sock')) {
+    dockerAvailable = true;
+    console.log('Docker monitoring enabled (socket)');
+    collectDockerStats();
+    collectDockerDisk();
+    setInterval(collectDockerStats, 5000);
+    setInterval(collectDockerDisk, 60000);
+  } else {
+    // Fallback: use Coolify API to run docker stats on the host
+    dockerAvailable = true;
+    console.log('Docker socket not found — using Coolify API fallback');
+    collectDockerStatsViaCoolify();
+    setInterval(collectDockerStatsViaCoolify, 10000);
   }
-  dockerAvailable = true;
-  console.log('Docker monitoring enabled');
-  collectDockerStats();
-  collectDockerDisk();
-  setInterval(collectDockerStats, 5000);
-  setInterval(collectDockerDisk, 60000);
 })();
 
 // --- Remote Server Stats (Shootnbox 79.137.88.192 via monitor agent) ---

@@ -99,7 +99,61 @@
             </div>
         </div>
 
+        <!-- RAM par projet -->
+        <div class="section" id="ram-projects-section" style="display:none">
+            <div class="section-title">RAM par projet</div>
+            <div id="ram-projects-grid" style="display:grid;grid-template-columns:1fr;gap:8px"></div>
+        </div>
+
         <style>
+            .project-ram-card {
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 10px;
+                padding: 12px 16px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .project-ram-name {
+                font-size: 13px;
+                font-weight: 600;
+                color: #e6edf3;
+                min-width: 160px;
+                flex-shrink: 0;
+            }
+            .project-ram-bar-wrap {
+                flex: 1;
+                height: 10px;
+                background: #21262d;
+                border-radius: 5px;
+                overflow: hidden;
+                min-width: 60px;
+            }
+            .project-ram-bar {
+                height: 100%;
+                border-radius: 5px;
+                transition: width 0.8s ease;
+                background: #58a6ff;
+            }
+            .project-ram-bar.large { background: #f85149; }
+            .project-ram-bar.medium { background: #d97706; }
+            .project-ram-val {
+                font-size: 13px;
+                font-weight: 700;
+                color: #c9d1d9;
+                font-family: 'SF Mono', 'Fira Code', monospace;
+                min-width: 70px;
+                text-align: right;
+                flex-shrink: 0;
+            }
+            .project-ram-containers {
+                font-size: 10px;
+                color: #6e7681;
+                min-width: 40px;
+                text-align: right;
+                flex-shrink: 0;
+            }
             .monitor-card {
                 background: #161b22;
                 border: 1px solid #30363d;
@@ -546,6 +600,11 @@ async function startStatsStream() {
                 renderBreakdown('disk', diskItems, diskMax);
             }
 
+            // RAM par projet (grouped containers)
+            if (data.containers && data.containers.length > 0) {
+                renderProjectRam(data.containers, data.ram.total_gb * 1024);
+            }
+
             var now = new Date();
             var timeEl = document.getElementById('mon-time');
             if (timeEl) timeEl.textContent = 'Live — ' + now.toLocaleTimeString('fr-FR');
@@ -594,6 +653,91 @@ function renderBreakdown(cardId, items, maxVal) {
     }
 
     el.innerHTML = html;
+}
+
+// --- Group containers into projects ---
+var PROJECT_RULES = [
+    { name: 'Supabase',        match: /supabase|postgres|postgrest|gotrue|realtime|storage|kong|meta|imgproxy|vector|logflare|studio|auth/i },
+    { name: 'Coolify',         match: /coolify|sentinel/i },
+    { name: 'OptiTourBooth',   match: /optitour/i },
+    { name: 'CryptoSignals',   match: /crypto/i },
+    { name: 'Freqtrade',       match: /freqtrade/i },
+    { name: 'Focus Racer',     match: /focus.?racer/i },
+    { name: 'SEO Studio',      match: /seo/i },
+    { name: 'JOJA Distribution', match: /joja/i },
+    { name: 'LCBconnect',      match: /lcb/i },
+    { name: 'BlogAssurance',   match: /blog.?ass/i },
+    { name: 'Lokashopy',       match: /lokashopy/i },
+    { name: 'Belotte',         match: /belotte/i },
+    { name: 'Code Server',     match: /code.?server/i },
+    { name: 'Upload Tool',     match: /upload/i },
+    { name: 'Admin Hub',       match: /admin/i },
+    { name: 'Gestionnaire Site', match: /gestionnaire|sites/i },
+    { name: 'Kooki',           match: /kooki/i },
+    { name: 'Alice',           match: /alice/i },
+    { name: 'Tracker Heures',  match: /heures|tracker/i },
+];
+
+function getProjectName(containerName) {
+    for (var i = 0; i < PROJECT_RULES.length; i++) {
+        if (PROJECT_RULES[i].match.test(containerName)) return PROJECT_RULES[i].name;
+    }
+    return null;
+}
+
+function renderProjectRam(containers, totalRamMB) {
+    var section = document.getElementById('ram-projects-section');
+    var grid = document.getElementById('ram-projects-grid');
+    if (!section || !grid) return;
+
+    // Group by project
+    var projects = {};
+    var other = { containers: [], memMB: 0 };
+    for (var i = 0; i < containers.length; i++) {
+        var c = containers[i];
+        var proj = getProjectName(c.name);
+        if (proj) {
+            if (!projects[proj]) projects[proj] = { containers: [], memMB: 0 };
+            projects[proj].containers.push(c.name);
+            projects[proj].memMB += c.memMB;
+        } else {
+            other.containers.push(c.name);
+            other.memMB += c.memMB;
+        }
+    }
+
+    // Sort by RAM desc
+    var sorted = Object.keys(projects).map(function(name) {
+        return { name: name, memMB: projects[name].memMB, count: projects[name].containers.length, containers: projects[name].containers };
+    }).sort(function(a, b) { return b.memMB - a.memMB; });
+
+    if (other.memMB > 0) {
+        sorted.push({ name: 'Autres', memMB: other.memMB, count: other.containers.length, containers: other.containers });
+    }
+
+    var maxMB = sorted.length > 0 ? sorted[0].memMB : 1;
+    var html = '';
+    for (var j = 0; j < sorted.length; j++) {
+        var p = sorted[j];
+        var pct = maxMB > 0 ? Math.min(p.memMB / maxMB * 100, 100) : 0;
+        var barClass = 'project-ram-bar';
+        if (p.memMB > 4096) barClass += ' large';
+        else if (p.memMB > 1024) barClass += ' medium';
+        var tooltip = p.containers.join(', ');
+        html += '<div class="project-ram-card" title="' + tooltip + '">' +
+            '<span class="project-ram-name">' + p.name + '</span>' +
+            '<span class="project-ram-bar-wrap"><span class="' + barClass + '" style="width:' + pct.toFixed(0) + '%"></span></span>' +
+            '<span class="project-ram-val">' + fmtMB(p.memMB) + '</span>' +
+            '<span class="project-ram-containers">' + p.count + ' ct</span>' +
+            '</div>';
+    }
+
+    // Total
+    var totalUsed = sorted.reduce(function(s, p) { return s + p.memMB; }, 0);
+    html += '<div style="text-align:right;font-size:11px;color:#6e7681;padding-top:4px">Total containers: ' + fmtMB(totalUsed) + ' / ' + fmtMB(totalRamMB) + ' RAM serveur</div>';
+
+    grid.innerHTML = html;
+    section.style.display = '';
 }
 
 function updateGauge(id, percent, mainText, subText, prefix) {
